@@ -20,7 +20,7 @@ func main() {
 	if err != nil {
 		log.Print("Startup: failed to get epoch")
 	} else {
-		duration := int64(time.Since(epoch)) / 1000000000
+		duration := int64(time.Since(epoch) / time.Second)
 		log.Print("Startup: Time since the epoch is " + strconv.FormatInt(duration, 10))
 	}
 
@@ -44,6 +44,8 @@ func main() {
 }
 
 func handleConnection(c net.Conn) {
+	defer c.Close()
+
 	log.Print("Connection Established")
 
 	reader := bufio.NewReader(c)
@@ -53,14 +55,12 @@ func handleConnection(c net.Conn) {
 	}
 
 	s, err := reader.ReadBytes('\n')
-	line := string(s)
-
 	if err != nil {
-		log.Print("read line failed")
-		log.Fatal(err)
-	} else {
-		log.Print("got ." + line + ".");
+		log.Print("readBytes failed")
+		log.Print(err)
+		return
 	}
 
-	c.Close()
+	line := string(s)
+	log.Print("got: " + line)
 }
