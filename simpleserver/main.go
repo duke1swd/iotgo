@@ -8,6 +8,7 @@ import (
 	//"fmt"
 	"log"
 	"net"
+	"bufio"
 	"time"
 	"strconv"
 )
@@ -42,45 +43,23 @@ func main() {
 	}
 }
 
-func getLine(c net.Conn) (string, bool) {
-	var s string
-
-	buffer := make([]byte, 0, 1024)
-
-	// Read timeout is 2 seconds from now
-	for len(s) < 128 {
-		err := c.SetReadDeadline(time.Now().Add(time.Second * 2))
-		if err != nil {
-			log.Print("Failed to set read timeout")
-		}
-
-		n, err := c.Read(buffer)
-		if err != nil {
-			log.Print("Read error or timeout")
-			return "", false
-		}
-if n > 0 {
-log.Print("got " + strconv.Itoa(n) + " bytes")
-}
-		for i := 0; i < n; i++ {
-			if buffer[i] == '\n' {
-				return s, true
-			}
-			s += string([]byte{buffer[i]})
-		}
-	}
-	log.Print("no newline found");
-	return "", false
-}
-
 func handleConnection(c net.Conn) {
 	log.Print("Connection Established")
 
-	s, ok := getLine(c)
-	if ! ok {
+	reader := bufio.NewReader(c)
+	err := c.SetReadDeadline(time.Now().Add(time.Second * 2))
+	if err != nil {
+		log.Print("Failed to set read timeout")
+	}
+
+	s, err := reader.ReadBytes('\n')
+	line := string(s)
+
+	if err != nil {
 		log.Print("read line failed")
+		log.Fatal(err)
 	} else {
-		log.Print("got ." + s + ".");
+		log.Print("got ." + line + ".");
 	}
 
 	c.Close()
