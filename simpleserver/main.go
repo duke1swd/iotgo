@@ -119,4 +119,5 @@ func returnValue(c net.Conn, code int, value int64) {
 	}
 
 	writer.WriteString(msg)
+	writer.Flush()
 }
