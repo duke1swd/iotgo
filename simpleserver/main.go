@@ -5,20 +5,23 @@
 package main
 
 import (
-	//"fmt"
+	"fmt"
 	"log"
 	"net"
 	"bufio"
 	"time"
 	"strconv"
+	"strings"
+	"unicode"
 )
 
 var epoch time.Time
+var debug bool = true
 
 func main() {
 	epoch, err := time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
 	if err != nil {
-		log.Print("Startup: failed to get epoch")
+		log.Fatal("Startup: failed to get epoch")
 	} else {
 		duration := int64(time.Since(epoch) / time.Second)
 		log.Print("Startup: Time since the epoch is " + strconv.FormatInt(duration, 10))
@@ -46,7 +49,9 @@ func main() {
 func handleConnection(c net.Conn) {
 	defer c.Close()
 
-	log.Print("Connection Established")
+	if debug {
+		fmt.Print("Connection Established")
+	}
 
 	reader := bufio.NewReader(c)
 	err := c.SetReadDeadline(time.Now().Add(time.Second * 2))
@@ -61,6 +66,57 @@ func handleConnection(c net.Conn) {
 		return
 	}
 
-	line := string(s)
-	log.Print("got: " + line)
+	// Trim off the trailing newline (and other cruft, if present)
+	line := strings.TrimFunc(string(s), unicode.IsSpace)
+
+	if debug {
+		fmt.Println("Got: " + line)
+	}
+
+	fields := strings.Split(line, ",")
+	if debug {
+		for i, f := range fields {
+			fmt.Printf("%2d: %s\n", i, f)
+		}
+	}
+
+	if len(fields) != 4 {
+		// badly formed line
+		returnValue(c, 0, 0)
+		return
+	}
+
+	service := fields[0]
+	location := fields[1]
+	device := fields[2]
+	password := fields[3]
+
+	if password != "314159" {
+		// bad password.  Really just an anti DDOS measure
+		returnValue(c, 0, 0)
+		return
+	}
+
+	log.Print(fmt.Sprintf("Ping from %s.%s.%s", service, location, device))
+	epoch, _ := time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
+	returnValue(c, 9, int64(time.Since(epoch) / time.Second))
+}
+
+// Format response and send it
+func returnValue(c net.Conn, code int, value int64) {
+	var msg string
+
+	writer := bufio.NewWriter(c)
+
+	if code == 0 {
+		msg = "0\n"
+	} else {
+		msg = fmt.Sprintf("%d,%d\n", code, value)
+	}
+
+	if debug {
+		fmt.Print("Responding with: " + msg)
+	}
+
+	writer.WriteString(msg)
 }
