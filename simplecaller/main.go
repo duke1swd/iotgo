@@ -8,6 +8,7 @@ import (
 	//"fmt"
 	"log"
 	"net"
+	"bufio"
 )
 
 func main() {
@@ -18,5 +19,7 @@ func main() {
 		log.Fatal("Cannot connect to server " + server)
 	}
 	log.Print("Connected.  yay!")
+	writer := bufio.NewWriter(conn)
+	writer.WriteString("Hello World.\n");
 	conn.Close()
 }
