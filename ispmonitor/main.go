@@ -21,7 +21,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Sets your Google Cloud Platform project ID.
+	// This is the IOT Services project
 	projectID := "iot-services-274518"
 
 	// Creates a client.
@@ -30,45 +30,58 @@ func main() {
 		log.Fatalf("ISP Monitor: Failed to create client: %v", err)
 	}
 
-	// Sets the id for the new topic.
+	// Log messages go to topic Logs. 
 	topicID := "Logs"
 
-	// Get the topic object
+	// Get a pointer to the topic object
 	topic := client.Topic(topicID)
 	if topic == nil {
 		log.Fatalf("ISP Monitor: Failed to get topic: %s", topicID)
 	}
 	defer topic.Stop()
-	/* request to send message immediately */
+
+	// request to send messages immediately
 	topic.PublishSettings.CountThreshold = 1
 
-	myPublish(ctx, topic, 1, 0)
+	// Publish a sample message
+	myPublishNow(ctx, topic, 1, 0)
 }
 
 /*
-  Returns true of it was able to publish.
-  Uses a 10 second timeout
- */
-func myPublish(ctx context.Context, tpx pubsub.Topic, msgNum, msgVal int) bool {
-	var myMsg pubsub.Message
+  This routine publishes a log message.
+  Log messages have 3 attributes.
+   - A time the message was recorded, which may be signicantly before it was published
+   - A message number.  Basically, what event is being logged
+   - An integer value that may contain relevant information about the logged event.
 
+  Returns true of it was able to publish.
+  Uses a 10 second timeout on the publish.
+ */
+func myPublishNow(ctx context.Context, tpx * pubsub.Topic, msgNum, msgVal int) bool {
 	epoch, err := time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT");
 	if err != nil {
 		log.Fatal("failed to get epoch");
 	}
 	now := int64(time.Since(epoch) / time.Second)
+	return myPublish(ctx, tpx, now, msgNum, msgVal)
+}
 
-	myMsg.Attributes["IOTTime"] = strconv.FormatInt(now, 10)
+
+func myPublish(ctx context.Context, tpx * pubsub.Topic, when int64, msgNum, msgVal int) bool {
+	var myMsg pubsub.Message
+
+	myMsg.Attributes = make(map[string]string)
+	myMsg.Attributes["IOTTime"] = strconv.FormatInt(when, 10)
 	myMsg.Attributes["MsgNum"] = strconv.Itoa(msgNum)
 	myMsg.Attributes["MsgVal"] = strconv.Itoa(msgVal)
 
 	ctxd, cancelFn := context.WithDeadline(ctx, time.Now().Add(10 * time.Second))
 	defer cancelFn()
 
-	result := tpx.Publish(ctxd, myMsg)
-	_, err = result.Get(ctxd)	
+	result := tpx.Publish(ctxd, &myMsg)
+	_, err := result.Get(ctxd)	
 	if err != nil {
-		log.Format("publish get result returns error: %v", err)
+		log.Printf("publish get result returns error: %v", err)
 		return false
 	}
 
