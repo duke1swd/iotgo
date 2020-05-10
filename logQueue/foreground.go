@@ -18,7 +18,7 @@ var (
 	cancelFunc context.CancelFunc
 )
 
-type LogSender func(s string, c context.Context) bool
+type LogSender func(t, s string, c context.Context) bool
 
 /*
  * Initializes the system.  Spawns a thread
@@ -61,8 +61,4 @@ func Stop() {
 	}
 
 	cancelFunc = nil
-}
-
-func backgroundLogThread(c context.Context, sender LogSender) {
-	// Not yet implemented
 }
