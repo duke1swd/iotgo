@@ -39,7 +39,7 @@ func Start(sender LogSender) error {
 		err = os.Mkdir(workingDir, 0755)
 		if err != nil {
 			// Nope.  We are done.
-			return fmt.Errorf("Trying to mkdir %s got error %w",
+			return fmt.Errorf("Trying to mkdir %s got error %v",
 				workingDir,
 				err)
 		}
