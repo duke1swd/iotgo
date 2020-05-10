@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 	"os"
+	"strings"
 )
 
 const timeToSend = 10	// timeout in seconds
@@ -36,6 +37,11 @@ func backgroundLogThread(c context.Context, sender LogSender) {
 		}
 		for _, f := range(files) {
 			file := f.Name()
+			// ignore files whose name begins with "_"
+			if strings.HasPrefix(file, "_") {
+				continue
+			}
+
 			content, err := ioutil.ReadFile(file)
 			if err != nil {
 				// for some reason could not read the file.
@@ -53,19 +59,16 @@ func backgroundLogThread(c context.Context, sender LogSender) {
 			// send the log message off into the world
 			r := sender(file, text, ctx)
 			cf()
-			if r {
-
-				// worked.  delete the message and loop
-				err := os.Remove(file)
-				if err != nil {
-					// if there is an error, abort. Prevent infinite loop this way
-					return
-				}
-				continue	// go on to next file
+			if !r {
+				// sender failed
+				break;
 			}
-			
-			// sender failed
-			break;
+			// worked.  delete the message and loop
+			err = os.Remove(file)
+			if err != nil {
+				// if there is an error, abort. Prevent infinite loop this way
+				return
+			}
 		}
 
 		// Either we processed all the files or the sender failed
