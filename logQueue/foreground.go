@@ -95,9 +95,12 @@ func Log(s string) error {
 /*
  * Clean junk out of the log directory.
  * If the arg is true, cleans everything out.
+ * Returns true if anything was cleaned out
  */
 
-func clean(very bool) {
+func clean(very bool) (retval bool) {
+
+	retval = false
 	files, err := ioutil.ReadDir(workingDir)
 	if err != nil {
 		return
@@ -110,6 +113,8 @@ func clean(very bool) {
 		// ignore files whose name begins with "_"
 		if very || strings.HasPrefix(shortName, "_") {
 			os.Remove(file)
+			retval = true
 		}
 	}
+	return
 }

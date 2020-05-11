@@ -80,7 +80,7 @@ func backgroundLogThread(c context.Context, sender LogSender) {
 		// Wait until 5 minutes or until the incoming context is cancelled.
 		t := timeToWait
 		if (debugMode) {
-			t = 10
+			t = 5
 		}
 		ctx, cf := context.WithTimeout(c, time.Duration(t) * time.Second)
 		<- ctx.Done()

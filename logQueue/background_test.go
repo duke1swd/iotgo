@@ -15,7 +15,7 @@ func TestBackgroundLogThread1(t *testing.T) {
 	linkchan = make(chan string)
 	defer close(linkchan)
 
-	c, cxf := context.WithTimeout(context.Background(), 15 * time.Second)
+	c, cxf := context.WithTimeout(context.Background(), 7 * time.Second)
 	defer cxf()
 
 	go backgroundLogThread(c, mySender1);

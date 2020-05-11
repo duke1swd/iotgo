@@ -5,6 +5,7 @@ import (
 	"time"
 	"context"
 	"strings"
+	"fmt"
 )
 
 // write a log record and see that it comes back out
@@ -15,7 +16,7 @@ func TestLogWrite1(t *testing.T) {
 	linkchan = make(chan string)
 	defer close(linkchan)
 
-	c, cxf := context.WithTimeout(context.Background(), 22 * time.Second)
+	c, cxf := context.WithTimeout(context.Background(), 12 * time.Second)
 	defer cxf()
 	Start(c, mySender1);
 	myMessage := "Test Message 1"
@@ -46,5 +47,46 @@ func TestLogWrite1(t *testing.T) {
 			}
 			return
 		}
+	}
+}
+
+const nMess = 100
+
+// write a bunch of log records
+func TestLogWrite2(t *testing.T) {
+
+	debugMode = true
+
+	linkchan = make(chan string)
+	defer close(linkchan)
+
+	c, cxf := context.WithTimeout(context.Background(), 12 * time.Second)
+	defer cxf()
+	Start(c, mySender1);
+	for i := 0; i < nMess; i++ {
+		err := Log(fmt.Sprintf("Test Message %d", i))
+		if err != nil {
+			t.Fatalf("Logging failed on message %d, err = %v", i, err)
+		}
+	}
+	messages := nMess
+
+	for {
+		select {
+		case <- linkchan:
+			if messages == 0 {
+				t.Fatalf("Got too many messages")
+			}
+			messages -= 1
+		case <- c.Done():
+			if messages != 0 {
+				t.Fatalf("Timed out waiting for %d more messages", messages)
+			}
+			return
+		}
+	}
+
+	if clean(true) {
+		t.Fatalf("Found files in log directory at end of test")
 	}
 }
