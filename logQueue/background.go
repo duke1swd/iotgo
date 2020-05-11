@@ -30,7 +30,6 @@ const timeToWait = 600	// time between directory scans, in seconds
  */
 
 func backgroundLogThread(c context.Context, sender LogSender) {
-	running = true
 	defer func() {
 		running = false
 	}()
@@ -41,9 +40,10 @@ func backgroundLogThread(c context.Context, sender LogSender) {
 			return
 		}
 		for _, f := range(files) {
-			file := f.Name()
+			shortName := f.Name()
+			file := workingDir + "/" + shortName
 			// ignore files whose name begins with "_"
-			if strings.HasPrefix(file, "_") {
+			if strings.HasPrefix(shortName, "_") {
 				continue
 			}
 
@@ -62,7 +62,7 @@ func backgroundLogThread(c context.Context, sender LogSender) {
 			ctx, cf := context.WithTimeout(c, timeToSend * time.Second)
 
 			// send the log message off into the world
-			r := sender(file, text, ctx)
+			r := sender(shortName, text, ctx)
 			cf()
 			if !r {
 				// sender failed
@@ -84,7 +84,7 @@ func backgroundLogThread(c context.Context, sender LogSender) {
 		}
 		ctx, cf := context.WithTimeout(c, time.Duration(t) * time.Second)
 		<- ctx.Done()
-		if c.Err() == context.Canceled {
+		if c.Err() != nil {
 			// If the incoming context has been cancelled, we are instructed to stop.
 			cf()
 			return;

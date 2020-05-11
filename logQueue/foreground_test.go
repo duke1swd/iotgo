@@ -5,7 +5,6 @@ import (
 	"time"
 	"context"
 	"strings"
-	"log"
 )
 
 // write a log record and see that it comes back out
@@ -20,7 +19,10 @@ func TestLogWrite1(t *testing.T) {
 	defer cxf()
 	Start(c, mySender1);
 	myMessage := "Test Message 1"
-	Log(myMessage)
+	err := Log(myMessage)
+	if err != nil {
+		t.Fatalf("Logging failed err = %v", err)
+	}
 	messages := 1
 
 	for {
@@ -29,10 +31,13 @@ func TestLogWrite1(t *testing.T) {
 			if messages != 1 {
 				t.Fatalf("Got unexpected or duplicate message in test log write 1: %s", m)
 			}
-			log.Printf("Got message: %s", m)
 			// did we get what we sent?
-			if strings.Fields(m)[1] != myMessage {
-				t.Fatalf("Sent %s got %s", myMessage, m)
+			mFields := strings.SplitN(m, " ", 2)
+			if len(mFields) != 2 {
+				t.Fatalf("Recieved message badly formatted: %s", m)
+			}
+			if mFields[1] != myMessage {
+				t.Fatalf("Sent .%s. got .%s.", myMessage, mFields[1])
 			}
 			messages -= 1
 		case <- c.Done():

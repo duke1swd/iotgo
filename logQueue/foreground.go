@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"time"
+	"strconv"
 )
 
 const workingDir = "/tmp/logQueue"
@@ -55,6 +56,7 @@ func Start(myContext context.Context, sender LogSender) error {
 
 	// spawn the thread that will pump the enqueued messages
 	go backgroundLogThread(myContext, sender)
+	running = true
 	return nil
 }
 
@@ -64,12 +66,12 @@ func Log(s string) error {
 	}
 
 	// write the log message to a temporary file
-	tempFileName := workingDir + "/_" + string(seqn)
-	tempFile, err := os.OpenFile(tempFileName, os.O_EXCL | os.O_CREATE, 0600)
+	tempFileName := workingDir + "/_" + strconv.FormatInt(seqn, 10)
+	tempFile, err := os.OpenFile(tempFileName, os.O_EXCL | os.O_CREATE | os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("Cannot creat temp file %s: %v", tempFileName, err)
 	}
-	_, err = tempFile.WriteString(s + "\n")
+	_, err = tempFile.WriteString(s)
 	if err != nil {
 		return fmt.Errorf("Cannot write temp file %s: %v", tempFileName, err)
 	}
@@ -77,7 +79,7 @@ func Log(s string) error {
 
 	// rename the temp file to its final name
 	now := int64(time.Since(epoch) / time.Second)
-	logFileName := fmt.Sprintf("%d_%d", now, seqn)
+	logFileName := workingDir + "/" + fmt.Sprintf("%d_%d", now, seqn)
 	seqn += 1
 	err = os.Rename(tempFileName, logFileName)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 	"context"
+	"log"
 )
 
 var linkchan chan string
@@ -14,10 +15,10 @@ func TestBackgroundLogThread1(t *testing.T) {
 	linkchan = make(chan string)
 	defer close(linkchan)
 
-	c, cxf := context.WithTimeout(context.Background(), 30 * time.Second)
+	c, cxf := context.WithTimeout(context.Background(), 15 * time.Second)
 	defer cxf()
 
-	backgroundLogThread(c, mySender1);
+	go backgroundLogThread(c, mySender1);
 	select {
 	case m := <- linkchan:
 		t.Fatalf("Got unexpected message in test1: %s", m)
@@ -26,6 +27,7 @@ func TestBackgroundLogThread1(t *testing.T) {
 }
 
 func mySender1(t, s string, c context.Context) bool {
+	log.Printf("Sender called on %s %s", t, s)
 	linkchan <- t + " " + s
 	return true
 }
