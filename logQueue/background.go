@@ -30,6 +30,11 @@ const timeToWait = 600	// time between directory scans, in seconds
  */
 
 func backgroundLogThread(c context.Context, sender LogSender) {
+	running = true
+	defer func() {
+		running = false
+	}()
+
 	for {
 		files, err := ioutil.ReadDir(workingDir)
 		if err != nil {
@@ -73,7 +78,11 @@ func backgroundLogThread(c context.Context, sender LogSender) {
 
 		// Either we processed all the files or the sender failed
 		// Wait until 5 minutes or until the incoming context is cancelled.
-		ctx, cf := context.WithTimeout(c, timeToWait * time.Second)
+		t := timeToWait
+		if (debugMode) {
+			t = 10
+		}
+		ctx, cf := context.WithTimeout(c, time.Duration(t) * time.Second)
 		<- ctx.Done()
 		if c.Err() == context.Canceled {
 			// If the incoming context has been cancelled, we are instructed to stop.

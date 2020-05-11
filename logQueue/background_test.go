@@ -12,8 +12,11 @@ var linkchan chan string
 func TestBackgroundLogThread1(t *testing.T) {
 
 	linkchan = make(chan string)
+	defer close(linkchan)
+
 	c, cxf := context.WithTimeout(context.Background(), 30 * time.Second)
 	defer cxf()
+
 	backgroundLogThread(c, mySender1);
 	select {
 	case m := <- linkchan:
