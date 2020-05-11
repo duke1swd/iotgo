@@ -15,7 +15,7 @@ func TestLogWrite1(t *testing.T) {
 	linkchan = make(chan string)
 	defer close(linkchan)
 
-	c, cxf := context.WithTimeout(context.Background(), 30 * time.Second)
+	c, cxf := context.WithTimeout(context.Background(), 22 * time.Second)
 	defer cxf()
 	Start(c, mySender1);
 	myMessage := "Test Message 1"

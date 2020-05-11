@@ -13,6 +13,7 @@ import (
 	"errors"
 	"time"
 	"strconv"
+	"strings"
 )
 
 const workingDir = "/tmp/logQueue"
@@ -48,6 +49,8 @@ func Start(myContext context.Context, sender LogSender) error {
 				err)
 		}
 	}
+	clean(false)
+
 	epoch, err = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
 	if err != nil {
 		return fmt.Errorf("failed to get epoch")
@@ -87,4 +90,26 @@ func Log(s string) error {
 	}
 
 	return nil
+}
+
+/*
+ * Clean junk out of the log directory.
+ * If the arg is true, cleans everything out.
+ */
+
+func clean(very bool) {
+	files, err := ioutil.ReadDir(workingDir)
+	if err != nil {
+		return
+	}
+
+	for _, f := range(files) {
+		shortName := f.Name()
+		file := workingDir + "/" + shortName
+
+		// ignore files whose name begins with "_"
+		if very || strings.HasPrefix(shortName, "_") {
+			os.Remove(file)
+		}
+	}
 }
