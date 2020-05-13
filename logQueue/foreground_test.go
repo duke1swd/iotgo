@@ -153,7 +153,7 @@ func TestLogWrite3(t *testing.T) {
 	}
 }
 
-func mySender2(t, s string, c context.Context) bool {
+func mySender2(c context.Context, t, s string) bool {
 	if blocked {
 		log.Printf("Sender called on %s %s.  Blocked", t, s)
 		nblocked++

@@ -26,7 +26,7 @@ func TestBackgroundLogThread1(t *testing.T) {
 	}
 }
 
-func mySender1(t, s string, c context.Context) bool {
+func mySender1(c context.Context, t, s string) bool {
 	log.Printf("Sender called on %s %s", t, s)
 	linkchan <- t + " " + s
 	return true

@@ -22,7 +22,7 @@ var (
 	oldNow int64
 )
 
-type LogSender func(t, s string, c context.Context) bool
+type LogSender func(c context.Context, t, s string) bool
 
 var (
 	running bool

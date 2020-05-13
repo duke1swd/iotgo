@@ -63,7 +63,7 @@ func backgroundLogThread(c context.Context, sender LogSender) {
 			ctx, cf := context.WithTimeout(c, timeToSend * time.Second)
 
 			// send the log message off into the world
-			r := sender(shortName, text, ctx)
+			r := sender(ctx, shortName, text)
 			cf()
 			if !r {
 				// sender failed
