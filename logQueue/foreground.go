@@ -19,6 +19,7 @@ import (
 
 var (
 	workingDir = filepath.Join(os.TempDir(), "logQueue")
+	oldNow int64
 )
 
 type LogSender func(t, s string, c context.Context) bool
@@ -85,7 +86,11 @@ func Log(s string) error {
 
 	// rename the temp file to its final name
 	now := int64(time.Since(epoch) / time.Second)
-	logFileName := filepath.Join(workingDir, fmt.Sprintf("%d_%d", now, seqn))
+	if now != oldNow {
+		seqn = 0
+		oldNow = now
+	}
+	logFileName := filepath.Join(workingDir, fmt.Sprintf("%d_%02d", now, seqn))
 	seqn += 1
 	err = os.Rename(tempFileName, logFileName)
 	if err != nil {
