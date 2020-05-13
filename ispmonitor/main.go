@@ -21,6 +21,7 @@ import (
 )
 
 const topicID = "Logs" // Log messages go to topic Logs. 
+const service = "ISPMonitor,Lakehouse"
 
 var (
 	oldNow int64
@@ -28,6 +29,20 @@ var (
 	epoch time.Time
 	topic *pubsub.Topic
 )
+
+/*
+ Declare the various log messages we use
+ */
+type logMessage int
+const (
+	logHelloWorld logMessage = iota
+)
+
+func (m logMessage) String() string {
+	return [...]string{
+		"Hello World!",
+	}[m]
+}
 
 func main() {
 	var err error
@@ -64,8 +79,8 @@ func main() {
 		log.Fatal("failed to start log queue. Err = %v", err);
 	}
 
-	// Publish a sample message
-	myPublishNow(ctx, 1, 0, "human readable version")
+	// Tell the world we are here.
+	myPublishEventually(logHelloWorld, 0)
 }
 
 /*
@@ -98,7 +113,8 @@ func myPublishNow(ctx context.Context, msgNum, msgVal int, human string) (retval
 /*
  This routine sees to it that a log message gets published, eventually.
  */
-func myPublishEventually(msgNum, msgVal int, human string) {
+func myPublishEventually(msgNum logMessage, msgVal int) {
+	human := fmt.Sprintf(msgNum.String(), msgVal)
 	logQueue.Log(fmt.Sprintf("%d,%d,%s", msgNum, msgVal, human))
 }
 
@@ -110,9 +126,12 @@ func myPublish(ctx context.Context, when int64, seqn, msgNum, msgVal int, human 
 	var myMsg pubsub.Message
 
 	myMsg.Attributes = make(map[string]string)
+	myMsg.Attributes["Service"] = service
 	myMsg.Attributes["IOTTime"] = strconv.FormatInt(when, 10)
+	myMsg.Attributes["Seqn"] = strconv.Itoa(seqn)
 	myMsg.Attributes["MsgNum"] = strconv.Itoa(msgNum)
 	myMsg.Attributes["MsgVal"] = strconv.Itoa(msgVal)
+	myMsg.Attributes["Human"] = human
 
 	ctxd, cancelFn := context.WithDeadline(ctx, time.Now().Add(10 * time.Second))
 	defer cancelFn()
