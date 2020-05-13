@@ -14,9 +14,12 @@ import (
 	"time"
 	"strconv"
 	"strings"
+	"path/filepath"
 )
 
-const workingDir = "/tmp/logQueue"
+var (
+	workingDir = filepath.Join(os.TempDir(), "logQueue")
+)
 
 type LogSender func(t, s string, c context.Context) bool
 
@@ -69,7 +72,7 @@ func Log(s string) error {
 	}
 
 	// write the log message to a temporary file
-	tempFileName := workingDir + "/_" + strconv.FormatInt(seqn, 10)
+	tempFileName := filepath.Join(workingDir, "_" + strconv.FormatInt(seqn, 10))
 	tempFile, err := os.OpenFile(tempFileName, os.O_EXCL | os.O_CREATE | os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("Cannot creat temp file %s: %v", tempFileName, err)
@@ -82,7 +85,7 @@ func Log(s string) error {
 
 	// rename the temp file to its final name
 	now := int64(time.Since(epoch) / time.Second)
-	logFileName := workingDir + "/" + fmt.Sprintf("%d_%d", now, seqn)
+	logFileName := filepath.Join(workingDir, fmt.Sprintf("%d_%d", now, seqn))
 	seqn += 1
 	err = os.Rename(tempFileName, logFileName)
 	if err != nil {
@@ -108,7 +111,7 @@ func clean(very bool) (retval bool) {
 
 	for _, f := range(files) {
 		shortName := f.Name()
-		file := workingDir + "/" + shortName
+		file := filepath.Join(workingDir, shortName)
 
 		// ignore files whose name begins with "_"
 		if very || strings.HasPrefix(shortName, "_") {

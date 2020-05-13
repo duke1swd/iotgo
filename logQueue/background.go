@@ -6,6 +6,7 @@ import (
 	"time"
 	"os"
 	"strings"
+	"path/filepath"
 )
 
 const timeToSend = 10	// timeout in seconds
@@ -41,7 +42,7 @@ func backgroundLogThread(c context.Context, sender LogSender) {
 		}
 		for _, f := range(files) {
 			shortName := f.Name()
-			file := workingDir + "/" + shortName
+			file := filepath.Join(workingDir, shortName)
 			// ignore files whose name begins with "_"
 			if strings.HasPrefix(shortName, "_") {
 				continue
