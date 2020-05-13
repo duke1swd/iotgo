@@ -10,19 +10,23 @@ package main
 
 import (
 	"context"
-	//"fmt"
+	"fmt"
 	"log"
 	"time"
 	"strconv"
+	"strings"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/duke1swd/iotgo/logQueue"
 )
 
+const topicID = "Logs" // Log messages go to topic Logs. 
+
 var (
 	oldNow int64
 	seqn int
 	epoch time.Time
+	topic *pubsub.Topic
 )
 
 func main() {
@@ -36,12 +40,6 @@ func main() {
 		log.Fatal("failed to get epoch. Err = %v", err);
 	}
 
-
-	err = logQueue.Start(ctx, publishDeferredMessage)
-	if err != nil {
-		log.Fatal("failed to start log queue. Err = %v", err);
-	}
-
 	// This is the IOT Services project
 	projectID := "iot-services-274518"
 
@@ -51,11 +49,8 @@ func main() {
 		log.Fatalf("ISP Monitor: Failed to create client: %v", err)
 	}
 
-	// Log messages go to topic Logs. 
-	topicID := "Logs"
-
 	// Get a pointer to the topic object
-	topic := client.Topic(topicID)
+	topic = client.Topic(topicID)
 	if topic == nil {
 		log.Fatalf("ISP Monitor: Failed to get topic: %s", topicID)
 	}
@@ -64,8 +59,13 @@ func main() {
 	// request to send messages immediately
 	topic.PublishSettings.CountThreshold = 1
 
+	err = logQueue.Start(ctx, publishDeferredMessage)
+	if err != nil {
+		log.Fatal("failed to start log queue. Err = %v", err);
+	}
+
 	// Publish a sample message
-	myPublishNow(ctx, topic, 1, 0, "human readable version")
+	myPublishNow(ctx, 1, 0, "human readable version")
 }
 
 /*
@@ -84,22 +84,29 @@ func main() {
   Returns true of it was able to publish.
   Uses a 10 second timeout on the publish.
  */
-func myPublishNow(ctx context.Context, tpx * pubsub.Topic, msgNum, msgVal int, human string) (retval bool) {
+func myPublishNow(ctx context.Context, msgNum, msgVal int, human string) (retval bool) {
 	now := int64(time.Since(epoch) / time.Second)
 	if now != oldNow {
 		seqn = 0
 		oldNow = now
 	}
-	retval = myPublish(ctx, tpx, now, seqn, msgNum, msgVal, human)
+	retval = myPublish(ctx, now, seqn, msgNum, msgVal, human)
 	seqn++
 	return
+}
+
+/*
+ This routine sees to it that a log message gets published, eventually.
+ */
+func myPublishEventually(msgNum, msgVal int, human string) {
+	logQueue.Log(fmt.Sprintf("%d,%d,%s", msgNum, msgVal, human))
 }
 
 
 /*
     This routine actually publishes messages, whether directly or delayed.
  */
-func myPublish(ctx context.Context, tpx * pubsub.Topic, when int64, seqn, msgNum, msgVal int, human string) bool {
+func myPublish(ctx context.Context, when int64, seqn, msgNum, msgVal int, human string) bool {
 	var myMsg pubsub.Message
 
 	myMsg.Attributes = make(map[string]string)
@@ -110,7 +117,7 @@ func myPublish(ctx context.Context, tpx * pubsub.Topic, when int64, seqn, msgNum
 	ctxd, cancelFn := context.WithDeadline(ctx, time.Now().Add(10 * time.Second))
 	defer cancelFn()
 
-	result := tpx.Publish(ctxd, &myMsg)
+	result := topic.Publish(ctxd, &myMsg)
 	_, err := result.Get(ctxd)	
 	if err != nil {
 		log.Printf("publish get result returns error: %v", err)
@@ -124,5 +131,24 @@ func myPublish(ctx context.Context, tpx * pubsub.Topic, when int64, seqn, msgNum
     Publish a log message that got deferred until now.
  */
 func publishDeferredMessage(ctx context.Context, t, s string) bool {
-	return false
+
+	// convert the file name into its pieces
+	f := strings.SplitN(t, "_", 2)
+	when, _ := strconv.ParseInt(f[0], 10, 64)
+
+	k, _ := strconv.ParseInt(f[1], 10, 32)
+	seqn := int(k)
+
+	// convert the message number into its pieces
+	f = strings.SplitN(s, ",", 3)
+
+	k, _ = strconv.ParseInt(f[0], 10, 32)
+	msgNum := int(k)
+
+	k, _ = strconv.ParseInt(f[1], 10, 32)
+	msgVal := int(k)
+
+	human := f[2]
+
+	return myPublish(ctx, when, seqn, msgNum, msgVal, human)
 }
