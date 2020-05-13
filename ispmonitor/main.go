@@ -18,8 +18,20 @@ import (
 	"cloud.google.com/go/pubsub"
 )
 
+var (
+	oldNow int64
+	seqn int
+	epoch time.Time
+)
+
 func main() {
+	var err error
 	ctx := context.Background()
+
+	epoch, err = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT");
+	if err != nil {
+		log.Fatal("failed to get epoch");
+	}
 
 	// This is the IOT Services project
 	projectID := "iot-services-274518"
@@ -44,30 +56,41 @@ func main() {
 	topic.PublishSettings.CountThreshold = 1
 
 	// Publish a sample message
-	myPublishNow(ctx, topic, 1, 0)
+	myPublishNow(ctx, topic, 1, 0, "human readable version")
 }
 
 /*
-  This routine publishes a log message.
-  Log messages have 3 attributes.
-   - A time the message was recorded, which may be signicantly before it was published
+  Log messages have these attributes.
+   - A time the message was recorded, which may be signicantly before it was published.
+   - A sequence number.  Messages published at the same time may have different sequence numbers.
    - A message number.  Basically, what event is being logged
    - An integer value that may contain relevant information about the logged event.
+   - A string that is the human readable version of the message.
+ */
 
+ /*
+  This routine publishes a log message directly.
+     This routine generates "now" as the time.
+     This routine generates the sequence number
   Returns true of it was able to publish.
   Uses a 10 second timeout on the publish.
  */
-func myPublishNow(ctx context.Context, tpx * pubsub.Topic, msgNum, msgVal int) bool {
-	epoch, err := time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT");
-	if err != nil {
-		log.Fatal("failed to get epoch");
-	}
+func myPublishNow(ctx context.Context, tpx * pubsub.Topic, msgNum, msgVal int, human string) (retval bool) {
 	now := int64(time.Since(epoch) / time.Second)
-	return myPublish(ctx, tpx, now, msgNum, msgVal)
+	if now != oldNow {
+		seqn = 0
+		oldNow = now
+	}
+	retval = myPublish(ctx, tpx, now, seqn, msgNum, msgVal, human)
+	seqn++
+	return
 }
 
 
-func myPublish(ctx context.Context, tpx * pubsub.Topic, when int64, msgNum, msgVal int) bool {
+/*
+    This routine actually publishes messages, whether directly or delayed.
+ */
+func myPublish(ctx context.Context, tpx * pubsub.Topic, when int64, seqn, msgNum, msgVal int, human string) bool {
 	var myMsg pubsub.Message
 
 	myMsg.Attributes = make(map[string]string)
