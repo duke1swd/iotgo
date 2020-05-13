@@ -16,6 +16,7 @@ import (
 	"strconv"
 
 	"cloud.google.com/go/pubsub"
+	"github.com/duke1swd/iotgo/logQueue"
 )
 
 var (
@@ -26,11 +27,19 @@ var (
 
 func main() {
 	var err error
-	ctx := context.Background()
+
+	ctx, cxf := context.WithCancel(context.Background())
+	defer cxf()
 
 	epoch, err = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT");
 	if err != nil {
-		log.Fatal("failed to get epoch");
+		log.Fatal("failed to get epoch. Err = %v", err);
+	}
+
+
+	err = logQueue.Start(ctx, publishDeferredMessage)
+	if err != nil {
+		log.Fatal("failed to start log queue. Err = %v", err);
 	}
 
 	// This is the IOT Services project
@@ -109,4 +118,11 @@ func myPublish(ctx context.Context, tpx * pubsub.Topic, when int64, seqn, msgNum
 	}
 
 	return true
+}
+
+/*
+    Publish a log message that got deferred until now.
+ */
+func publishDeferredMessage(ctx context.Context, t, s string) bool {
+	return false
 }
