@@ -36,23 +36,51 @@ var (
 type logMessage int
 const (
 	logHelloWorld logMessage = iota
+	logInternetDown
+	logWiFiDown
+	logLifeIsGood
+	logWiFiReset
+	logModemReset
 )
 
 func (m logMessage) String() string {
 	return [...]string{
 		"Hello World!",
+		"Internet Down for %d seconds",
+		"WiFi Down for %d seconds",
+		"Internet Up for %d seconds",
+		"Router Reset try %d",
+		"Modem Reset try %d",
 	}[m]
 }
 
+type state int
+const (
+	stateBooting = iota
+	stateNoInternet
+	stateNoWiFi
+	stateGood
+)
+
+var (
+	currentState state
+	stateEntryTime time.Time
+	stateCounter int
+	attemptCounter int
+)
+
 func main() {
 	var err error
+
+	currentState = stateBooting
+	stateEntryTime = time.Now()
 
 	ctx, cxf := context.WithCancel(context.Background())
 	defer cxf()
 
 	epoch, err = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT");
 	if err != nil {
-		log.Fatal("failed to get epoch. Err = %v", err);
+		log.Fatalf("failed to get epoch. Err = %v", err);
 	}
 
 	// This is the IOT Services project
@@ -76,11 +104,69 @@ func main() {
 
 	err = logQueue.Start(ctx, publishDeferredMessage)
 	if err != nil {
-		log.Fatal("failed to start log queue. Err = %v", err);
+		log.Fatalf("failed to start log queue. Err = %v", err);
 	}
 
-	// Tell the world we are here.
-	myPublishEventually(logHelloWorld, 0)
+	mainLoop(ctx)
+}
+
+// This loop runs forever
+func mainLoop(ctx context.Context) {
+	var (
+		worked bool
+		msg logMessage
+	)
+
+	currentState = stateBooting
+	stateCounter = 0
+
+	for {
+		timeInState := time.Since(stateEntryTime)
+
+		oldState := currentState
+		switch currentState {
+		case stateBooting:
+			msg = logHelloWorld
+		case stateNoInternet:
+			msg = logInternetDown
+		case stateNoWiFi:
+			msg = logWiFiDown
+		case stateGood:
+			msg = logLifeIsGood
+		}
+
+		worked = myPublishNow(ctx, int(msg), int(timeInState / time.Second), msg.String())
+
+		// figure out the new state.  May be same as old state
+		if worked {
+			currentState = stateGood
+		} else if contactRouter() {
+			currentState = stateNoInternet
+		} else {
+			currentState = stateNoWiFi
+		}
+
+		// keep track of how long we've been in this state, both in terms of
+		// loops and time
+		if currentState != oldState {
+			stateEntryTime = time.Now()
+			stateCounter = 0
+			attemptCounter = 0
+		} else {
+			stateCounter++
+		}
+
+		// If things are down, try to kick them
+		if stateCounter == 2 || (stateCounter - 2) % 6 == 0 {
+			attemptCounter++
+			switch currentState {
+			case stateNoWiFi:
+				resetRouter(ctx)
+			case stateNoInternet:
+				resetModem(ctx)
+			}
+		}
+	}
 }
 
 /*
@@ -105,7 +191,7 @@ func myPublishNow(ctx context.Context, msgNum, msgVal int, human string) (retval
 		seqn = 0
 		oldNow = now
 	}
-	retval = myPublish(ctx, now, seqn, msgNum, msgVal, human)
+	retval = myPublish(ctx, now, seqn, msgNum, msgVal, fmt.Sprintf(human, msgVal))
 	seqn++
 	return
 }
@@ -115,7 +201,7 @@ func myPublishNow(ctx context.Context, msgNum, msgVal int, human string) (retval
  */
 func myPublishEventually(msgNum logMessage, msgVal int) {
 	human := fmt.Sprintf(msgNum.String(), msgVal)
-	logQueue.Log(fmt.Sprintf("%d,%d,%s", msgNum, msgVal, human))
+	logQueue.Log(fmt.Sprintf("%d,%d,%s", msgNum, msgVal, fmt.Sprintf(human, msgVal)))
 }
 
 
