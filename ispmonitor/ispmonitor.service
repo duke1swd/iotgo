@@ -1,0 +1,14 @@
+[Unit]
+Description=Internet Monitor
+After=network-online.target
+
+[Service]
+Environment=ROUTER=192.168.1.1
+Environment=LOCATION=Chapelwood
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/usr/local/cloud.google.com/iot-services-274518-6048a7825bd9.json
+Type=simple
+Restart=always
+ExecStart=/usr/local/bin/ispmonitor
+
+[Install]
+WantedBy=multi-user.target
