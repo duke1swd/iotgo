@@ -3,20 +3,25 @@ package main
 import (
 	"context"
 	"net/http"
+	"os"
 )
 
 /*
  * Contact the router
  */
- func contactRouter() bool {
-	 resp, err := http.Get("http://192.168.1.1")
-	 if err != nil {
-		 return false
-	 }
-	 defer resp.Body.Close()
+func contactRouter() bool {
+	router := os.Getenv("ROUTER")
+	if len(router) < 1 {
+		router = defaultRouter
+	}
+	resp, err := http.Get("http://" + router)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
 
-	 return true
- }
+	return true
+}
 
 /*
  * Hardware reset logic

@@ -12,28 +12,32 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/duke1swd/iotgo/logQueue"
 )
 
-const topicID = "Logs" // Log messages go to topic Logs. 
-const service = "ISPMonitor,Lakehouse"
+const topicID = "Logs" // Log messages go to topic Logs.
+const service = "ISPMonitor"
+const defaultLocation = "unknown"
+const defaultRouter = "192.168.1.1"
 
 var (
 	oldNow int64
-	seqn int
-	epoch time.Time
-	topic *pubsub.Topic
+	seqn   int
+	epoch  time.Time
+	topic  *pubsub.Topic
 )
 
 /*
  Declare the various log messages we use
- */
+*/
 type logMessage int
+
 const (
 	logHelloWorld logMessage = iota
 	logInternetDown
@@ -55,6 +59,7 @@ func (m logMessage) String() string {
 }
 
 type state int
+
 const (
 	stateBooting = iota
 	stateNoInternet
@@ -63,10 +68,11 @@ const (
 )
 
 var (
-	currentState state
+	currentState   state
 	stateEntryTime time.Time
-	stateCounter int
+	stateCounter   int
 	attemptCounter int
+	location       string
 )
 
 func main() {
@@ -75,12 +81,17 @@ func main() {
 	currentState = stateBooting
 	stateEntryTime = time.Now()
 
+	location = os.Getenv("LOCATION")
+	if len(location) < 1 {
+		location = defaultLocation
+	}
+
 	ctx, cxf := context.WithCancel(context.Background())
 	defer cxf()
 
-	epoch, err = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT");
+	epoch, err = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
 	if err != nil {
-		log.Fatalf("failed to get epoch. Err = %v", err);
+		log.Fatalf("failed to get epoch. Err = %v", err)
 	}
 
 	// This is the IOT Services project
@@ -104,7 +115,7 @@ func main() {
 
 	err = logQueue.Start(ctx, publishDeferredMessage)
 	if err != nil {
-		log.Fatalf("failed to start log queue. Err = %v", err);
+		log.Fatalf("failed to start log queue. Err = %v", err)
 	}
 
 	mainLoop(ctx)
@@ -114,7 +125,7 @@ func main() {
 func mainLoop(ctx context.Context) {
 	var (
 		worked bool
-		msg logMessage
+		msg    logMessage
 	)
 
 	currentState = stateBooting
@@ -135,7 +146,7 @@ func mainLoop(ctx context.Context) {
 			msg = logLifeIsGood
 		}
 
-		worked = myPublishNow(ctx, int(msg), int(timeInState / time.Second), msg.String())
+		worked = myPublishNow(ctx, int(msg), int(timeInState/time.Second), msg.String())
 
 		// figure out the new state.  May be same as old state
 		if worked {
@@ -157,7 +168,7 @@ func mainLoop(ctx context.Context) {
 		}
 
 		// If things are down, try to kick them
-		if stateCounter == 2 || (stateCounter - 2) % 6 == 0 {
+		if stateCounter == 2 || (stateCounter-2)%6 == 0 {
 			attemptCounter++
 			switch currentState {
 			case stateNoWiFi:
@@ -176,15 +187,15 @@ func mainLoop(ctx context.Context) {
    - A message number.  Basically, what event is being logged
    - An integer value that may contain relevant information about the logged event.
    - A string that is the human readable version of the message.
- */
+*/
 
- /*
+/*
   This routine publishes a log message directly.
      This routine generates "now" as the time.
      This routine generates the sequence number
   Returns true of it was able to publish.
   Uses a 10 second timeout on the publish.
- */
+*/
 func myPublishNow(ctx context.Context, msgNum, msgVal int, human string) (retval bool) {
 	now := int64(time.Since(epoch) / time.Second)
 	if now != oldNow {
@@ -198,32 +209,32 @@ func myPublishNow(ctx context.Context, msgNum, msgVal int, human string) (retval
 
 /*
  This routine sees to it that a log message gets published, eventually.
- */
+*/
 func myPublishEventually(msgNum logMessage, msgVal int) {
 	human := fmt.Sprintf(msgNum.String(), msgVal)
 	logQueue.Log(fmt.Sprintf("%d,%d,%s", msgNum, msgVal, fmt.Sprintf(human, msgVal)))
 }
 
-
 /*
-    This routine actually publishes messages, whether directly or delayed.
- */
+   This routine actually publishes messages, whether directly or delayed.
+*/
 func myPublish(ctx context.Context, when int64, seqn, msgNum, msgVal int, human string) bool {
 	var myMsg pubsub.Message
 
 	myMsg.Attributes = make(map[string]string)
 	myMsg.Attributes["Service"] = service
+	myMsg.Attributes["Location"] = location
 	myMsg.Attributes["IOTTime"] = strconv.FormatInt(when, 10)
 	myMsg.Attributes["Seqn"] = strconv.Itoa(seqn)
 	myMsg.Attributes["MsgNum"] = strconv.Itoa(msgNum)
 	myMsg.Attributes["MsgVal"] = strconv.Itoa(msgVal)
 	myMsg.Attributes["Human"] = human
 
-	ctxd, cancelFn := context.WithDeadline(ctx, time.Now().Add(10 * time.Second))
+	ctxd, cancelFn := context.WithDeadline(ctx, time.Now().Add(10*time.Second))
 	defer cancelFn()
 
 	result := topic.Publish(ctxd, &myMsg)
-	_, err := result.Get(ctxd)	
+	_, err := result.Get(ctxd)
 	if err != nil {
 		log.Printf("publish get result returns error: %v", err)
 		return false
@@ -233,8 +244,8 @@ func myPublish(ctx context.Context, when int64, seqn, msgNum, msgVal int, human 
 }
 
 /*
-    Publish a log message that got deferred until now.
- */
+   Publish a log message that got deferred until now.
+*/
 func publishDeferredMessage(ctx context.Context, t, s string) bool {
 
 	// convert the file name into its pieces
