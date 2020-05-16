@@ -21,11 +21,13 @@ const service = "ISPMonitor"
 const defaultLocation = "unknown"
 const defaultRouter = "192.168.1.1"
 const defaultProjectID = "iot-services-274518" // This is the IOT Services project
+const defaultPollInterval = 300                // 5 minutes
 
 var (
-	oldNow int64
-	seqn   int
-	epoch  time.Time
+	oldNow   int64
+	seqn     int
+	epoch    time.Time
+	location string
 )
 
 /*
@@ -40,6 +42,9 @@ const (
 	logLifeIsGood
 	logWiFiReset
 	logModemReset
+	logStateInternetUp
+	logStateInternetDown
+	logStateWiFiDown
 )
 
 func (m logMessage) String() string {
@@ -50,25 +55,11 @@ func (m logMessage) String() string {
 		"Internet Up for %d seconds",
 		"Router Reset try %d",
 		"Modem Reset try %d",
+		"Internet Up",
+		"Internet Down",
+		"WiFi Down",
 	}[m]
 }
-
-type state int
-
-const (
-	stateBooting = iota
-	stateNoInternet
-	stateNoWiFi
-	stateGood
-)
-
-var (
-	currentState   state
-	stateEntryTime time.Time
-	stateCounter   int
-	attemptCounter int
-	location       string
-)
 
 func main() {
 	var err error

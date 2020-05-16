@@ -1,9 +1,48 @@
+/*
+ * This is the infinite loop that monitors our Internet availability.
+ */
+
 package main
 
 import (
 	"context"
+	"os"
+	"strconv"
 	"time"
 )
+
+type state int
+
+const (
+	stateBooting = iota
+	stateNoInternet
+	stateNoWiFi
+	stateGood
+)
+
+var (
+	currentState   state
+	stateEntryTime time.Time
+	stateCounter   int
+	attemptCounter int
+	pollInterval   int
+)
+
+func init() {
+	var err error
+
+	currentState = stateBooting
+	stateEntryTime = time.Now()
+
+	pollInterval = defaultPollInterval
+	pollIntervalString := os.Getenv("POLLINTERVAL")
+	if len(pollIntervalString) > 0 {
+		pollInterval, err = strconv.Atoi(pollIntervalString)
+		if err != nil || pollInterval < 1 {
+			pollInterval = defaultPollInterval
+		}
+	}
+}
 
 // This loop runs forever
 func mainLoop(ctx context.Context) {
@@ -47,6 +86,16 @@ func mainLoop(ctx context.Context) {
 			stateEntryTime = time.Now()
 			stateCounter = 0
 			attemptCounter = 0
+			msg = 0
+			switch currentState {
+			case stateNoInternet:
+				msg = logStateInternetDown
+			case stateNoWiFi:
+				msg = logStateWiFiDown
+			case stateGood:
+				msg = logStateInternetUp
+			}
+			myPublishEventually(msg, 0)
 		} else {
 			stateCounter++
 		}
@@ -61,5 +110,6 @@ func mainLoop(ctx context.Context) {
 				resetModem(ctx)
 			}
 		}
+		time.Sleep(time.Duration(pollInterval) * time.Second)
 	}
 }
