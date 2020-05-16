@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"cloud.google.com/go/pubsub"
 	"github.com/duke1swd/iotgo/logQueue"
 )
+
+const publishDeadline = 30 // timeout on publishing, in seconds
 
 /*
   Log messages have these attributes.
@@ -20,6 +23,33 @@ import (
    - An integer value that may contain relevant information about the logged event.
    - A string that is the human readable version of the message.
 */
+
+var (
+	topic *pubsub.Topic
+)
+
+func myPublishInit(ctx context.Context) {
+
+	projectID := os.Getenv("PROJECTID")
+	if len(projectID) < 1 {
+		projectID = defaultProjectID
+	}
+
+	// Creates a client.
+	client, err := pubsub.NewClient(ctx, projectID)
+	if err != nil {
+		log.Fatalf("ISP Monitor: Failed to create client: %v", err)
+	}
+
+	// Get a pointer to the topic object
+	topic = client.Topic(topicID)
+	if topic == nil {
+		log.Fatalf("ISP Monitor: Failed to get topic: %s", topicID)
+	}
+
+	// request to send messages immediately
+	topic.PublishSettings.CountThreshold = 1
+}
 
 /*
   This routine publishes a log message directly.
@@ -62,7 +92,7 @@ func myPublish(ctx context.Context, when int64, seqn, msgNum, msgVal int, human 
 	myMsg.Attributes["MsgVal"] = strconv.Itoa(msgVal)
 	myMsg.Attributes["Human"] = human
 
-	ctxd, cancelFn := context.WithDeadline(ctx, time.Now().Add(10*time.Second))
+	ctxd, cancelFn := context.WithDeadline(ctx, time.Now().Add(publishDeadline*time.Second))
 	defer cancelFn()
 
 	result := topic.Publish(ctxd, &myMsg)

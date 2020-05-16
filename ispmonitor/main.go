@@ -10,24 +10,22 @@ package main
 
 import (
 	"context"
+	"github.com/duke1swd/iotgo/logQueue"
 	"log"
 	"os"
 	"time"
-
-	"cloud.google.com/go/pubsub"
-	"github.com/duke1swd/iotgo/logQueue"
 )
 
 const topicID = "Logs" // Log messages go to topic Logs.
 const service = "ISPMonitor"
 const defaultLocation = "unknown"
 const defaultRouter = "192.168.1.1"
+const defaultProjectID = "iot-services-274518" // This is the IOT Services project
 
 var (
 	oldNow int64
 	seqn   int
 	epoch  time.Time
-	topic  *pubsub.Topic
 )
 
 /*
@@ -86,30 +84,12 @@ func main() {
 	ctx, cxf := context.WithCancel(context.Background())
 	defer cxf()
 
+	myPublishInit(ctx)
+
 	epoch, err = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
 	if err != nil {
 		log.Fatalf("failed to get epoch. Err = %v", err)
 	}
-
-	// This is the IOT Services project
-	projectID := "iot-services-274518"
-
-	// Creates a client.
-	client, err := pubsub.NewClient(ctx, projectID)
-	if err != nil {
-		log.Fatalf("ISP Monitor: Failed to create client: %v", err)
-	}
-
-	// Get a pointer to the topic object
-	topic = client.Topic(topicID)
-	if topic == nil {
-		log.Fatalf("ISP Monitor: Failed to get topic: %s", topicID)
-	}
-	defer topic.Stop()
-
-	// request to send messages immediately
-	topic.PublishSettings.CountThreshold = 1
-
 	err = logQueue.Start(ctx, publishDeferredMessage)
 	if err != nil {
 		log.Fatalf("failed to start log queue. Err = %v", err)
