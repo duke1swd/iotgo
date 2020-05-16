@@ -6,28 +6,28 @@
 package logQueue
 
 import (
-	"io/ioutil"
-	"os"
-	"fmt"
 	"context"
 	"errors"
-	"time"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
-	"path/filepath"
+	"time"
 )
 
 var (
 	workingDir = filepath.Join(os.TempDir(), "logQueue")
-	oldNow int64
+	oldNow     int64
 )
 
 type LogSender func(c context.Context, t, s string) bool
 
 var (
-	running bool
-	seqn int64
-	epoch time.Time
+	running   bool
+	seqn      int64
+	epoch     time.Time
 	debugMode bool
 )
 
@@ -60,7 +60,6 @@ func Start(myContext context.Context, sender LogSender) error {
 		return fmt.Errorf("failed to get epoch")
 	}
 
-
 	// spawn the thread that will pump the enqueued messages
 	go backgroundLogThread(myContext, sender)
 	running = true
@@ -68,13 +67,13 @@ func Start(myContext context.Context, sender LogSender) error {
 }
 
 func Log(s string) error {
-	if ! running {
+	if !running {
 		return errors.New("logQueue not running")
 	}
 
 	// write the log message to a temporary file
-	tempFileName := filepath.Join(workingDir, "_" + strconv.FormatInt(seqn, 10))
-	tempFile, err := os.OpenFile(tempFileName, os.O_EXCL | os.O_CREATE | os.O_WRONLY, 0600)
+	tempFileName := filepath.Join(workingDir, "_"+strconv.FormatInt(seqn, 10))
+	tempFile, err := os.OpenFile(tempFileName, os.O_EXCL|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("Cannot creat temp file %s: %v", tempFileName, err)
 	}
@@ -114,7 +113,7 @@ func clean(very bool) (retval bool) {
 		return
 	}
 
-	for _, f := range(files) {
+	for _, f := range files {
 		shortName := f.Name()
 		file := filepath.Join(workingDir, shortName)
 

@@ -1,16 +1,16 @@
 package logQueue
 
 import (
-	"io/ioutil"
 	"context"
-	"time"
+	"io/ioutil"
 	"os"
-	"strings"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
-const timeToSend = 10	// timeout in seconds
-const timeToWait = 600	// time between directory scans, in seconds
+const timeToSend = 10  // timeout in seconds
+const timeToWait = 600 // time between directory scans, in seconds
 
 /*
  * This function is the background thread.
@@ -40,7 +40,7 @@ func backgroundLogThread(c context.Context, sender LogSender) {
 		if err != nil {
 			return
 		}
-		for _, f := range(files) {
+		for _, f := range files {
 			shortName := f.Name()
 			file := filepath.Join(workingDir, shortName)
 			// ignore files whose name begins with "_"
@@ -60,14 +60,14 @@ func backgroundLogThread(c context.Context, sender LogSender) {
 				continue
 			}
 			text := string(content)
-			ctx, cf := context.WithTimeout(c, timeToSend * time.Second)
+			ctx, cf := context.WithTimeout(c, timeToSend*time.Second)
 
 			// send the log message off into the world
 			r := sender(ctx, shortName, text)
 			cf()
 			if !r {
 				// sender failed
-				break;
+				break
 			}
 			// worked.  delete the message and loop
 			err = os.Remove(file)
@@ -80,15 +80,15 @@ func backgroundLogThread(c context.Context, sender LogSender) {
 		// Either we processed all the files or the sender failed
 		// Wait until 5 minutes or until the incoming context is cancelled.
 		t := timeToWait
-		if (debugMode) {
+		if debugMode {
 			t = 5
 		}
-		ctx, cf := context.WithTimeout(c, time.Duration(t) * time.Second)
-		<- ctx.Done()
+		ctx, cf := context.WithTimeout(c, time.Duration(t)*time.Second)
+		<-ctx.Done()
 		if c.Err() != nil {
 			// If the incoming context has been cancelled, we are instructed to stop.
 			cf()
-			return;
+			return
 		}
 		cf()
 	}

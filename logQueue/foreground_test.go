@@ -1,16 +1,16 @@
 package logQueue
 
 import (
-	"testing"
-	"time"
 	"context"
-	"strings"
 	"fmt"
 	"log"
+	"strings"
+	"testing"
+	"time"
 )
 
 var (
-	blocked bool
+	blocked  bool
 	nblocked int
 )
 
@@ -22,7 +22,7 @@ func TestLogWrite1(t *testing.T) {
 	linkchan = make(chan string)
 	defer close(linkchan)
 
-	c, cxf := context.WithTimeout(context.Background(), 12 * time.Second)
+	c, cxf := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cxf()
 	Start(c, mySender1)
 	myMessage := "Test Message 1"
@@ -34,7 +34,7 @@ func TestLogWrite1(t *testing.T) {
 
 	for {
 		select {
-		case m := <- linkchan:
+		case m := <-linkchan:
 			if messages != 1 {
 				t.Fatalf("Got unexpected or duplicate message in test log write 1: %s", m)
 			}
@@ -47,7 +47,7 @@ func TestLogWrite1(t *testing.T) {
 				t.Fatalf("Sent .%s. got .%s.", myMessage, mFields[1])
 			}
 			messages -= 1
-		case <- c.Done():
+		case <-c.Done():
 			if messages != 0 {
 				t.Fatalf("Message never received in test log write 1")
 			}
@@ -67,7 +67,7 @@ func TestLogWrite2(t *testing.T) {
 	linkchan = make(chan string)
 	defer close(linkchan)
 
-	c, cxf := context.WithTimeout(context.Background(), 12 * time.Second)
+	c, cxf := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cxf()
 	Start(c, mySender1)
 	for i := 0; i < nMess1; i++ {
@@ -80,12 +80,12 @@ func TestLogWrite2(t *testing.T) {
 
 	for {
 		select {
-		case <- linkchan:
+		case <-linkchan:
 			if messages == 0 {
 				t.Fatalf("Got too many messages")
 			}
 			messages -= 1
-		case <- c.Done():
+		case <-c.Done():
 			if messages != 0 {
 				t.Fatalf("Timed out waiting for %d more messages", messages)
 			}
@@ -108,8 +108,8 @@ func TestLogWrite3(t *testing.T) {
 	linkchan = make(chan string)
 	defer close(linkchan)
 
-	c, cxf := context.WithTimeout(context.Background(), 40 * time.Second)
-	cT, _ := context.WithTimeout(c, 15 * time.Second)
+	c, cxf := context.WithTimeout(context.Background(), 40*time.Second)
+	cT, _ := context.WithTimeout(c, 15*time.Second)
 	defer cxf()
 	Start(c, mySender2)
 	for i := 0; i < nMess2; i++ {
@@ -120,10 +120,10 @@ func TestLogWrite3(t *testing.T) {
 	}
 	messages := nMess2
 
-    testLoop:
+testLoop:
 	for {
 		select {
-		case <- linkchan:
+		case <-linkchan:
 			if messages == 0 {
 				t.Fatalf("Got too many messages")
 			}
@@ -131,9 +131,9 @@ func TestLogWrite3(t *testing.T) {
 				t.Fatalf("Got message while blocked")
 			}
 			messages -= 1
-		case <- cT.Done():
+		case <-cT.Done():
 			blocked = false
-		case <- c.Done():
+		case <-c.Done():
 			if messages != 0 {
 				t.Fatalf("Timed out waiting for %d more messages", messages)
 			}
