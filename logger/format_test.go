@@ -1,10 +1,9 @@
 package main
 
 import (
-	"testing"
 	"log"
+	"testing"
 )
-
 
 /*
  * These are the known keys, and their order
@@ -15,18 +14,18 @@ import (
 	"MsgNum": 2,
 	"MsgVal": 3,
 	"Human": 4,
- */
+*/
 
 func TestLogFormatter(t *testing.T) {
-	var td = map[string]string {
+	var td = map[string]string{
 		"Service": "Test Service",
-		"A Key": "T1 A Key",
-		"Human": "T1 Human String",
-		"Seqn": "T1 Seqn",
-		"B Key": "T1 B Key",
+		"A Key":   "T1 A Key",
+		"Human":   "T1 Human String",
+		"Seqn":    "T1 Seqn",
+		"B Key":   "T1 B Key",
 	}
-	
-	expectedResult := "T1 Seqn,T1 Human String,T1 A Key,T1 B Key"
+
+	expectedResult := "T1 Seqn,T1 A Key,T1 B Key,T1 Human String"
 
 	result := msgFormat(td)
 
