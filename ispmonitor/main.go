@@ -34,10 +34,10 @@ var (
 type logMessage int
 
 const (
-	logHelloWorld logMessage = iota
+	logLifeIsGood logMessage = iota
+	logHelloWorld
 	logInternetDown
 	logWiFiDown
-	logLifeIsGood
 	logWiFiReset
 	logModemReset
 	logStateInternetUp
@@ -47,10 +47,10 @@ const (
 
 func (m logMessage) String() string {
 	return [...]string{
+		"Internet Up for %d seconds",
 		"Hello World!",
 		"Internet Down for %d seconds",
 		"WiFi Down for %d seconds",
-		"Internet Up for %d seconds",
 		"Router Reset try %d",
 		"Modem Reset try %d",
 		"Internet Up",
