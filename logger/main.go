@@ -8,17 +8,20 @@ package main
 
 import (
         "context"
+	"os"
         "fmt"
-        "io"
         "sync"
+	"log"
 
         "cloud.google.com/go/pubsub"
 )
 
 const defaultSubID = "Logger"
+const defaultProjectID = "iot-services-274518" // This is the IOT Services project
 
 var (
 	subID string
+	projectID string
         mu sync.Mutex
 )
 
@@ -26,6 +29,11 @@ func init() {
 	subID = os.Getenv("SUBID")
 	if len(subID) < 1 {
 		subID = defaultSubID
+	}
+
+	projectID = os.Getenv("PROJECTID")
+	if len(projectID) < 1 {
+		projectID = defaultProjectID
 	}
 }
 
@@ -40,9 +48,9 @@ func main() {
         }
 
         sub := client.Subscription(subID)
-        err = sub.Receive(cctx, processor)
+        err = sub.Receive(ctx, processor)
         if err != nil {
-                return fmt.Errorf("Receive: %v", err)
+		log.Fatalf("Receive returns error: %v", err)
         }
 
 	// wait forever
@@ -56,4 +64,9 @@ func processor(ctx context.Context, msg *pubsub.Message) {
 	mu.Lock()
 	defer mu.Unlock()
 	//write the message to the log file
+
+	fmt.Println("Received Message:")
+	for k, v := range(msg.Attributes) {
+		fmt.Printf("\t%s: %s\n", k, v)
+	}
 }
