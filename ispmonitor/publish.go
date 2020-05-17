@@ -25,8 +25,23 @@ const publishDeadline = 30 // timeout on publishing, in seconds
 */
 
 var (
-	topic *pubsub.Topic
+	topic    *pubsub.Topic
+	location string
 )
+
+func init() {
+	var err error
+
+	location = os.Getenv("LOCATION")
+	if len(location) < 1 {
+		location = defaultLocation
+	}
+
+	epoch, err = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
+	if err != nil {
+		log.Fatalf("failed to get epoch. Err = %v", err)
+	}
+}
 
 func myPublishInit(ctx context.Context) {
 

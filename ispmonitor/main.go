@@ -12,7 +12,6 @@ import (
 	"context"
 	"github.com/duke1swd/iotgo/logQueue"
 	"log"
-	"os"
 	"time"
 )
 
@@ -24,10 +23,9 @@ const defaultProjectID = "iot-services-274518" // This is the IOT Services proje
 const defaultPollInterval = 300                // 5 minutes
 
 var (
-	oldNow   int64
-	seqn     int
-	epoch    time.Time
-	location string
+	oldNow int64
+	seqn   int
+	epoch  time.Time
 )
 
 /*
@@ -67,20 +65,11 @@ func main() {
 	currentState = stateBooting
 	stateEntryTime = time.Now()
 
-	location = os.Getenv("LOCATION")
-	if len(location) < 1 {
-		location = defaultLocation
-	}
-
 	ctx, cxf := context.WithCancel(context.Background())
 	defer cxf()
 
 	myPublishInit(ctx)
 
-	epoch, err = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
-	if err != nil {
-		log.Fatalf("failed to get epoch. Err = %v", err)
-	}
 	err = logQueue.Start(ctx, publishDeferredMessage)
 	if err != nil {
 		log.Fatalf("failed to start log queue. Err = %v", err)
