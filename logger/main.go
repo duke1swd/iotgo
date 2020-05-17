@@ -7,22 +7,22 @@
 package main
 
 import (
-        "context"
-	"os"
-        "fmt"
-        "sync"
+	"context"
+	"fmt"
 	"log"
+	"os"
+	"sync"
 
-        "cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub"
 )
 
 const defaultSubID = "Logger"
 const defaultProjectID = "iot-services-274518" // This is the IOT Services project
 
 var (
-	subID string
+	subID     string
 	projectID string
-        mu sync.Mutex
+	mu        sync.Mutex
 )
 
 func init() {
@@ -39,23 +39,23 @@ func init() {
 
 func main() {
 
-        ctx, cfx := context.WithCancel(context.Background())
+	ctx, cfx := context.WithCancel(context.Background())
 	defer cfx()
 
-        client, err := pubsub.NewClient(ctx, projectID)
-        if err != nil {
+	client, err := pubsub.NewClient(ctx, projectID)
+	if err != nil {
 		log.Fatalf("ISP Monitor: Failed to create client: %v", err)
-        }
+	}
 
-        sub := client.Subscription(subID)
-        err = sub.Receive(ctx, processor)
-        if err != nil {
+	sub := client.Subscription(subID)
+	err = sub.Receive(ctx, processor)
+	if err != nil {
 		log.Fatalf("Receive returns error: %v", err)
-        }
+	}
 
 	// wait forever
 	for {
-		<- ctx.Done()
+		<-ctx.Done()
 	}
 }
 
@@ -66,7 +66,7 @@ func processor(ctx context.Context, msg *pubsub.Message) {
 	//write the message to the log file
 
 	fmt.Println("Received Message:")
-	for k, v := range(msg.Attributes) {
+	for k, v := range msg.Attributes {
 		fmt.Printf("\t%s: %s\n", k, v)
 	}
 }
