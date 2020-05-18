@@ -1,0 +1,2 @@
+GOOGLE_APPLICATION_CREDENTIALS=/usr/local/cloud.google.com/iot-services-274518-6048a7825bd9.json
+export GOOGLE_APPLICATION_CREDENTIALS
