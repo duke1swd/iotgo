@@ -90,6 +90,7 @@ func main() {
 	}
 
 	// wait forever
+	log.Println("Entering Daemon Loop")
 	for {
 		<-ctx.Done()
 	}
