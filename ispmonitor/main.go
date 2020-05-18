@@ -79,5 +79,6 @@ func main() {
 		log.Fatalf("failed to start log queue. Err = %v", err)
 	}
 
+	log.Print("Entering deamon loop")
 	mainLoop(ctx)
 }

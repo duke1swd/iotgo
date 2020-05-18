@@ -47,8 +47,9 @@ func init() {
 // This loop runs forever
 func mainLoop(ctx context.Context) {
 	var (
-		worked bool
-		msg    logMessage
+		worked       bool
+		msg          logMessage
+		nextLoopTime time.Time = time.Now()
 	)
 
 	currentState = stateBooting
@@ -114,6 +115,7 @@ func mainLoop(ctx context.Context) {
 				resetModem(ctx)
 			}
 		}
-		time.Sleep(time.Duration(pollInterval) * time.Second)
+		nextLoopTime = nextLoopTime.Add(time.Duration(pollInterval) * time.Second)
+		time.Sleep(time.Until(nextLoopTime))
 	}
 }
