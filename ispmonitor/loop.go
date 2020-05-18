@@ -69,7 +69,10 @@ func mainLoop(ctx context.Context) {
 			msg = logLifeIsGood
 		}
 
-		worked = myPublishNow(ctx, int(msg), int(timeInState/time.Second), msg.String())
+		worked = myPublishNow(ctx, msg, int(timeInState/time.Second))
+		if !worked {
+			myPublishEventually(logContactFailed, 0)
+		}
 
 		// figure out the new state.  May be same as old state
 		if worked {
@@ -77,6 +80,7 @@ func mainLoop(ctx context.Context) {
 		} else if contactRouter() {
 			currentState = stateNoInternet
 		} else {
+			myPublishEventually(logNoRouter, 0)
 			currentState = stateNoWiFi
 		}
 

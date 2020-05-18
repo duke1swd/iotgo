@@ -73,13 +73,17 @@ func myPublishInit(ctx context.Context) {
   Returns true of it was able to publish.
   Uses a 10 second timeout on the publish.
 */
-func myPublishNow(ctx context.Context, msgNum, msgVal int, human string) (retval bool) {
+func myPublishNow(ctx context.Context, msg logMessage, msgVal int) (retval bool) {
 	now := int64(time.Since(epoch) / time.Second)
 	if now != oldNow {
 		seqn = 0
 		oldNow = now
 	}
-	retval = myPublish(ctx, now, seqn, msgNum, msgVal, fmt.Sprintf(human, msgVal))
+	human := msg.String()
+	if strings.Count(human, "%") > 0 {
+		human = fmt.Sprintf(human, msgVal)
+	}
+	retval = myPublish(ctx, now, seqn, int(msg), msgVal, human)
 	seqn++
 	return
 }
@@ -87,9 +91,12 @@ func myPublishNow(ctx context.Context, msgNum, msgVal int, human string) (retval
 /*
  This routine sees to it that a log message gets published, eventually.
 */
-func myPublishEventually(msgNum logMessage, msgVal int) {
-	human := fmt.Sprintf(msgNum.String(), msgVal)
-	logQueue.Log(fmt.Sprintf("%d,%d,%s", msgNum, msgVal, fmt.Sprintf(human, msgVal)))
+func myPublishEventually(msg logMessage, msgVal int) {
+	human := msg.String()
+	if strings.Count(human, "%") > 0 {
+		human = fmt.Sprintf(human, msgVal)
+	}
+	logQueue.Log(fmt.Sprintf("%d,%d,%s", int(msg), msgVal, human))
 }
 
 /*

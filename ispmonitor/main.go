@@ -43,6 +43,8 @@ const (
 	logStateInternetUp
 	logStateInternetDown
 	logStateWiFiDown
+	logContactFailed
+	logNoRouter
 )
 
 func (m logMessage) String() string {
@@ -56,6 +58,8 @@ func (m logMessage) String() string {
 		"Internet Up",
 		"Internet Down",
 		"WiFi Down",
+		"Contact Failed",
+		"Contact with Router Failed",
 	}[m]
 }
 
