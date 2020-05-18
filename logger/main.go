@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,12 +22,13 @@ import (
 const defaultSubID = "Logger"
 const defaultProjectID = "iot-services-274518" // This is the IOT Services project
 const defaultLogDirectory = "/var/log"
-const filtering = false
+const defaultFiltering = true
 
 var (
 	subID        string
 	projectID    string
 	logDirectory string
+	filtering    bool
 	mu           sync.Mutex
 	epoch        time.Time
 	repeatFilter map[string]bool
@@ -48,6 +50,19 @@ func init() {
 	logDirectory = os.Getenv("LOGDIR")
 	if len(logDirectory) < 1 {
 		logDirectory = defaultLogDirectory
+	}
+
+	filtering = defaultFiltering
+	fs := os.Getenv("FILTERING")
+	switch strings.ToLower(fs) {
+	case "false":
+		filtering = false
+	case "f":
+		filtering = false
+	case "true":
+		filtering = true
+	case "t":
+		filtering = true
 	}
 
 	epoch, err = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
