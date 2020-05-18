@@ -8,11 +8,11 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"os"
 	"strings"
-	"log"
 )
 
 const defaultLogin = "duke1swd"
@@ -49,7 +49,7 @@ func init() {
 	}
 
 	updateURL = os.Getenv("UPDATEURL")
-	if len(host) < 1 {
+	if len(updateURL) < 1 {
 		updateURL = defaultUpdateURL
 	}
 }
@@ -60,6 +60,13 @@ func main() {
 		fmt.Printf("My IP address is %s\n", myIP.String())
 	} else {
 		fmt.Println("No IP address")
+	}
+
+	ok = postIP(myIP)
+	if ok {
+		fmt.Printf("Successfully Posted")
+	} else {
+		fmt.Printf("Failed to post")
 	}
 }
 
@@ -90,10 +97,18 @@ func postIP(ip net.IP) bool {
 	postURL := updateURL +
 		"?login=" + login + "&password=" + password + "&host=" + host +
 		"&myip=" + ip.String()
+	fmt.Printf("updateURL: %s\n", updateURL)
+	fmt.Printf("postURL: %s\n", postURL)
 
 	resp, err := http.Get(postURL)
 	if err != nil {
 		log.Printf("Fail on GET to post IP address.  Err=%v", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		log.Printf("Bad Response to GET on post IP address.  Code = %d", resp.StatusCode)
 		return false
 	}
 
