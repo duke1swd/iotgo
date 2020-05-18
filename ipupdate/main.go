@@ -64,9 +64,9 @@ func main() {
 
 	ok = postIP(myIP)
 	if ok {
-		fmt.Printf("Successfully Posted")
+		fmt.Println("Successfully Posted")
 	} else {
-		fmt.Printf("Failed to post")
+		fmt.Println("Failed to post")
 	}
 }
 
@@ -97,8 +97,6 @@ func postIP(ip net.IP) bool {
 	postURL := updateURL +
 		"?login=" + login + "&password=" + password + "&host=" + host +
 		"&myip=" + ip.String()
-	fmt.Printf("updateURL: %s\n", updateURL)
-	fmt.Printf("postURL: %s\n", postURL)
 
 	resp, err := http.Get(postURL)
 	if err != nil {
