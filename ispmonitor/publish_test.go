@@ -10,7 +10,7 @@ func TestPublish1(t *testing.T) {
 	defer cxf()
 
 	myPublishInit(ctx)
-	if !myPublishNow(ctx, 0, 0, "test message (%d)") {
+	if !myPublishNow(ctx, logMessage(0), 0) {
 		t.Fatal("Immediate publish failed.  Credentials set?")
 	}
 }

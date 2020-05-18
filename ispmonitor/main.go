@@ -22,6 +22,8 @@ const defaultRouter = "192.168.1.1"
 const defaultProjectID = "iot-services-274518" // This is the IOT Services project
 const defaultPollInterval = 300                // 5 minutes
 
+const version = 1
+
 var (
 	oldNow int64
 	seqn   int
@@ -34,28 +36,32 @@ var (
 type logMessage int
 
 const (
-	logHelloWorld logMessage = iota
+	logLifeIsGood logMessage = iota
+	logHelloWorld
 	logInternetDown
 	logWiFiDown
-	logLifeIsGood
 	logWiFiReset
 	logModemReset
 	logStateInternetUp
 	logStateInternetDown
 	logStateWiFiDown
+	logContactFailed
+	logNoRouter
 )
 
 func (m logMessage) String() string {
 	return [...]string{
-		"Hello World!",
+		"Internet Up for %d seconds",
+		"Hello World! Version=%d",
 		"Internet Down for %d seconds",
 		"WiFi Down for %d seconds",
-		"Internet Up for %d seconds",
 		"Router Reset try %d",
 		"Modem Reset try %d",
 		"Internet Up",
 		"Internet Down",
 		"WiFi Down",
+		"Contact Failed",
+		"Contact with Router Failed",
 	}[m]
 }
 
@@ -75,5 +81,6 @@ func main() {
 		log.Fatalf("failed to start log queue. Err = %v", err)
 	}
 
+	log.Print("Entering deamon loop")
 	mainLoop(ctx)
 }

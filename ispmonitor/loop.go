@@ -47,8 +47,10 @@ func init() {
 // This loop runs forever
 func mainLoop(ctx context.Context) {
 	var (
-		worked bool
-		msg    logMessage
+		worked       bool
+		msg          logMessage
+		val          int
+		nextLoopTime time.Time = time.Now()
 	)
 
 	currentState = stateBooting
@@ -58,9 +60,11 @@ func mainLoop(ctx context.Context) {
 		timeInState := time.Since(stateEntryTime)
 
 		oldState := currentState
+		val = int(timeInState / time.Second)
 		switch currentState {
 		case stateBooting:
 			msg = logHelloWorld
+			val = version
 		case stateNoInternet:
 			msg = logInternetDown
 		case stateNoWiFi:
@@ -69,7 +73,10 @@ func mainLoop(ctx context.Context) {
 			msg = logLifeIsGood
 		}
 
-		worked = myPublishNow(ctx, int(msg), int(timeInState/time.Second), msg.String())
+		worked = myPublishNow(ctx, msg, val)
+		if !worked {
+			myPublishEventually(logContactFailed, 0)
+		}
 
 		// figure out the new state.  May be same as old state
 		if worked {
@@ -77,6 +84,7 @@ func mainLoop(ctx context.Context) {
 		} else if contactRouter() {
 			currentState = stateNoInternet
 		} else {
+			myPublishEventually(logNoRouter, 0)
 			currentState = stateNoWiFi
 		}
 
@@ -110,6 +118,7 @@ func mainLoop(ctx context.Context) {
 				resetModem(ctx)
 			}
 		}
-		time.Sleep(time.Duration(pollInterval) * time.Second)
+		nextLoopTime = nextLoopTime.Add(time.Duration(pollInterval) * time.Second)
+		time.Sleep(time.Until(nextLoopTime))
 	}
 }
