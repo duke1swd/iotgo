@@ -22,6 +22,8 @@ const defaultRouter = "192.168.1.1"
 const defaultProjectID = "iot-services-274518" // This is the IOT Services project
 const defaultPollInterval = 300                // 5 minutes
 
+const version = 1
+
 var (
 	oldNow int64
 	seqn   int
@@ -50,7 +52,7 @@ const (
 func (m logMessage) String() string {
 	return [...]string{
 		"Internet Up for %d seconds",
-		"Hello World!",
+		"Hello World! Version=%d",
 		"Internet Down for %d seconds",
 		"WiFi Down for %d seconds",
 		"Router Reset try %d",

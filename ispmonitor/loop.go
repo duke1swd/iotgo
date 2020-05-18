@@ -49,6 +49,7 @@ func mainLoop(ctx context.Context) {
 	var (
 		worked       bool
 		msg          logMessage
+		val          int
 		nextLoopTime time.Time = time.Now()
 	)
 
@@ -59,9 +60,11 @@ func mainLoop(ctx context.Context) {
 		timeInState := time.Since(stateEntryTime)
 
 		oldState := currentState
+		val = int(timeInState / time.Second)
 		switch currentState {
 		case stateBooting:
 			msg = logHelloWorld
+			val = version
 		case stateNoInternet:
 			msg = logInternetDown
 		case stateNoWiFi:
@@ -70,7 +73,7 @@ func mainLoop(ctx context.Context) {
 			msg = logLifeIsGood
 		}
 
-		worked = myPublishNow(ctx, msg, int(timeInState/time.Second))
+		worked = myPublishNow(ctx, msg, val)
 		if !worked {
 			myPublishEventually(logContactFailed, 0)
 		}
