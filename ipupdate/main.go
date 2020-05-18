@@ -10,14 +10,15 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"strings"
 	"os"
+	"strings"
+	"log"
 )
 
 const defaultLogin = "duke1swd"
 const defaultPassword = "mMkf7E;TBzQJd7E^-H3G"
 const defaultHost = "canyonranch.linkpc.net"
-
+const defaultUpdateURL = "http://update.dnsexit.com/RemoteUpdate.sv"
 
 var (
 	proxies = [...]string{
@@ -25,9 +26,10 @@ var (
 		"ip2.dnsexit.com",
 		"ip3.dnsexit.com",
 	}
-	login string
-	password string
-	host string
+	login     string
+	password  string
+	host      string
+	updateURL string
 )
 
 func init() {
@@ -45,6 +47,11 @@ func init() {
 	if len(host) < 1 {
 		host = defaultHost
 	}
+
+	updateURL = os.Getenv("UPDATEURL")
+	if len(host) < 1 {
+		updateURL = defaultUpdateURL
+	}
 }
 
 func main() {
@@ -58,7 +65,6 @@ func main() {
 
 func myIPAddress() (net.IP, bool) {
 	for _, s := range proxies {
-		fmt.Printf("Server: %s\n", s)
 		resp, err := http.Get("http://" + s)
 		if err != nil {
 			continue
@@ -71,7 +77,6 @@ func myIPAddress() (net.IP, bool) {
 		}
 		bodyS := strings.Trim(string(body), " ")
 
-		fmt.Printf("\tGot %s\n", bodyS)
 		myIP := net.ParseIP(bodyS)
 		if myIP == nil {
 			continue
@@ -79,4 +84,18 @@ func myIPAddress() (net.IP, bool) {
 		return myIP, true
 	}
 	return net.ParseIP("127.0.0.1"), false
+}
+
+func postIP(ip net.IP) bool {
+	postURL := updateURL +
+		"?login=" + login + "&password=" + password + "&host=" + host +
+		"&myip=" + ip.String()
+
+	resp, err := http.Get(postURL)
+	if err != nil {
+		log.Printf("Fail on GET to post IP address.  Err=%v", err)
+		return false
+	}
+
+	return true
 }
