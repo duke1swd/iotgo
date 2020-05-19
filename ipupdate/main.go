@@ -16,7 +16,6 @@ import (
 )
 
 const defaultLogin = "duke1swd"
-const defaultPassword = "mMkf7E;TBzQJd7E^-H3G"
 const defaultHost = "canyonranch.linkpc.net"
 const defaultUpdateURL = "http://update.dnsexit.com/RemoteUpdate.sv"
 
@@ -33,16 +32,6 @@ var (
 )
 
 func init() {
-	login = os.Getenv("LOGIN")
-	if len(login) < 1 {
-		login = defaultLogin
-	}
-
-	password = os.Getenv("PASSWORD")
-	if len(password) < 1 {
-		password = defaultPassword
-	}
-
 	host = os.Getenv("HOST")
 	if len(host) < 1 {
 		host = defaultHost

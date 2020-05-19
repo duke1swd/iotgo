@@ -19,3 +19,13 @@ func TestMyIPAddress(t *testing.T) {
 		t.Fatal("No IP address")
 	}
 }
+
+func TestCredentials(t *testing.T) {
+	if len(login) < 1 {
+		t.Fatal("no login")
+	}
+	if len(password) < 1 {
+		t.Fatal("no password")
+	}
+	fmt.Printf("Login = %s\n", login)
+}
