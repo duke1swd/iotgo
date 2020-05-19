@@ -25,13 +25,14 @@ const defaultLogDirectory = "/var/log"
 const defaultFiltering = true
 
 var (
-	subID        string
-	projectID    string
-	logDirectory string
-	filtering    bool
-	mu           sync.Mutex
-	epoch        time.Time
-	repeatFilter map[string]bool
+	subID          string
+	projectID      string
+	logDirectory   string
+	filtering      bool
+	mu             sync.Mutex
+	epoch          time.Time
+	repeatFilter   map[string]bool
+	lastMessagePos map[string]int64 = make(map[string]int64)
 )
 
 func init() {
@@ -67,7 +68,7 @@ func init() {
 
 	epoch, err = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
 	if err != nil {
-		log.Fatalf("failed to get epoch. Err = %v", err)
+		log.Fatalf("Logger: Failed to get epoch. Err = %v", err)
 	}
 
 	repeatFilter = make(map[string]bool)
@@ -80,17 +81,17 @@ func main() {
 
 	client, err := pubsub.NewClient(ctx, projectID)
 	if err != nil {
-		log.Fatalf("ISP Monitor: Failed to create client: %v", err)
+		log.Fatalf("Logger: Failed to create client: %v", err)
 	}
 
 	sub := client.Subscription(subID)
 	err = sub.Receive(ctx, processor)
 	if err != nil {
-		log.Fatalf("Receive returns error: %v", err)
+		log.Fatalf("Logger: Receive returns error: %v", err)
 	}
 
 	// wait forever
-	log.Println("Entering Daemon Loop")
+	log.Println("Logger: Entering Daemon Loop")
 	for {
 		<-ctx.Done()
 	}
@@ -117,7 +118,7 @@ func processor(ctx context.Context, msg *pubsub.Message) {
 	}
 	s, ok := msg.Attributes["Service"]
 	if !ok {
-		log.Println("Message missing Service")
+		log.Println("Logger: Message missing Service")
 		return
 	}
 	logFileName += s
@@ -130,6 +131,7 @@ func processor(ctx context.Context, msg *pubsub.Message) {
 	defer mu.Unlock()
 
 	// If this is message zero, and it is a repeat, discard it.
+	append := true
 	if filtering {
 		msgNumS, ok := msg.Attributes["MsgNum"]
 		if ok {
@@ -137,7 +139,7 @@ func processor(ctx context.Context, msg *pubsub.Message) {
 			if err == nil && msgNum == 0 {
 				b, ok := repeatFilter[logFileName]
 				if ok && b {
-					return
+					append = false
 				}
 				repeatFilter[logFileName] = true
 			} else {
@@ -146,18 +148,38 @@ func processor(ctx context.Context, msg *pubsub.Message) {
 		}
 	}
 
-	// OK.  Do the actual append
+	pos, ok := lastMessagePos[logFileName]
+	if !ok {
+		append = true
+	}
 
-	f, err := os.OpenFile(fullFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(fullFileName, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Printf("Cannot open for append log file %s. err = %v", fullFileName, err)
+		log.Printf("Logger: Cannot open for writing log file %s. err = %v", fullFileName, err)
 		return
 	}
 	defer f.Close()
 
+	size, err := f.Seek(0, 2)
+	if err != nil {
+		log.Printf("Logger: Cannot seek on log file %s. err = %v", fullFileName, err)
+		return
+	}
+
+	if append || size <= pos {
+		pos = size
+	} else {
+		_, err = f.Seek(pos, 0)
+		if err != nil {
+			log.Printf("Logger: Cannot second seek on log file %s. err = %v", fullFileName, err)
+			return
+		}
+	}
+
+	lastMessagePos[logFileName] = pos
 	_, err = f.WriteString(formattedMsg)
 	if err != nil {
-		log.Printf("Error appending to file %s.  err = %v\n", fullFileName, err)
+		log.Printf("Logger: Error writing to file %s.  err = %v\n", fullFileName, err)
 		return
 	}
 }
