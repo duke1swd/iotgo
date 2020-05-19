@@ -1,0 +1,6 @@
+/var/log/Lake_ISPMonitor {
+	rotate 7
+	nocompress
+	size 100k
+	nocreate
+}
