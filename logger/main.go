@@ -31,8 +31,9 @@ var (
 	filtering      bool
 	mu             sync.Mutex
 	epoch          time.Time
-	repeatFilter   map[string]bool
+	repeatFilter   map[string]bool  = make(map[string]bool)
 	lastMessagePos map[string]int64 = make(map[string]int64)
+	lastDay        map[string]int   = make(map[string]int)
 )
 
 func init() {
@@ -70,8 +71,6 @@ func init() {
 	if err != nil {
 		log.Fatalf("Logger: Failed to get epoch. Err = %v", err)
 	}
-
-	repeatFilter = make(map[string]bool)
 }
 
 func main() {
@@ -137,11 +136,15 @@ func processor(ctx context.Context, msg *pubsub.Message) {
 		if ok {
 			msgNum, err := strconv.Atoi(msgNumS)
 			if err == nil && msgNum == 0 {
+				// we overwrite repeated copies of log message #0, but keep at least 1 a day.
+				day := stampTime.Day()
+				priorDay, _ := lastDay[logFileName]
 				b, ok := repeatFilter[logFileName]
-				if ok && b {
+				if day == priorDay && ok && b {
 					append = false
 				}
 				repeatFilter[logFileName] = true
+				lastDay[logFileName] = day
 			} else {
 				repeatFilter[logFileName] = false
 			}
