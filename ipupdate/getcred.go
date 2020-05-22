@@ -5,10 +5,10 @@
 package main
 
 import (
-	"os"
 	"io/ioutil"
-	"strings"
 	"log"
+	"os"
+	"strings"
 )
 
 const defaultFileName = "/etc/ipupdate.credentials"
