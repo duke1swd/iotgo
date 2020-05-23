@@ -9,7 +9,7 @@ Environment=HOST=canyonranch.linkpc.net
 Environment=LOCATION=Home
 Environment=CREDENTIALS=/etc/ipupdate.credentials
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/usr/local/cloud.google.com/iot-services-274518-6048a7825bd9.json
-ExecStart=/usr/local/bin/ipupdater -daemon
+ExecStart=/usr/local/bin/ipupdate -daemon
 
 [Install]
 WantedBy=multi-user.target
