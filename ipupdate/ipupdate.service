@@ -1,0 +1,15 @@
+[Unit]
+Description=DNS Exit IP Update Service
+After=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+Environment=HOST=canyonranch.linkpc.net
+Environment=LOCATION=Home
+Environment=CREDENTIALS=/etc/ipupdate.credentials
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/usr/local/cloud.google.com/iot-services-274518-6048a7825bd9.json
+ExecStart=/usr/local/bin/ipupdater -daemon
+
+[Install]
+WantedBy=multi-user.target

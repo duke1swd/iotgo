@@ -21,7 +21,6 @@ import (
 	"github.com/duke1swd/iotgo/logSimple"
 )
 
-const defaultLogin = "duke1swd"
 const defaultHost = "canyonranch.linkpc.net"
 const defaultUpdateURL = "http://update.dnsexit.com/RemoteUpdate.sv"
 const defaultLocation = "Home"
