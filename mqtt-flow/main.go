@@ -10,15 +10,32 @@ import (
 	"os"
 	"time"
 	"strings"
+	"strconv"
 
 	"github.com/eclipse/paho.mqtt.golang"
 )
 
+var (
+	epoch time.Time
+)
+
+func init() {
+	epoch, _ = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
+}
+
 var f mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 	topic := msg.Topic()
-	payload := msg.Payload()
+	payload := string(msg.Payload())
 	if strings.Contains(topic, "firmware") {
-		payload = []byte("(suppressed)")
+		payload = "(suppressed)"
+	}
+	if strings.Contains(topic, "time") && !strings.Contains(topic, "uptime") {
+		t, err := strconv.ParseInt(payload, 10, 64)
+		if err == nil {
+			etime := epoch.Add(time.Duration(t) * time.Second)
+			// if the payload appears to be a time, convert it to a sensible looking time
+			payload += " (" +  etime.Format("Mon Jan 2 15:04:05 -0700 EST 2006") + ")"
+		}
 	}
 	fmt.Printf("%s: %s\n", topic, payload)
 }
