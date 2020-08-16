@@ -13,8 +13,20 @@ import (
 	//"strconv"
 	"regexp"
 	"context"
+	"flag"
 
 	"github.com/eclipse/paho.mqtt.golang"
+)
+
+var (
+	flagu bool
+	flagl bool
+	flagD bool
+	flagF bool
+	flagd string
+	flagf string
+	flagdPresent bool
+	flagfPresent bool
 )
 
 var (
@@ -29,6 +41,17 @@ var (
 func init() {
 	epoch, _ = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
 	deviceMap = make(map[string]map[string]string)
+
+	flag.BoolVar(&flagu, "u", false, "upload firmware")
+	flag.BoolVar(&flagl, "l", false, "list devices or device (with -d) or verify a firmware file (with -f)")
+	flag.BoolVar(&flagD, "D", false, "debugging")
+	flag.BoolVar(&flagF, "F", false, "clear our OTA crap and reset the device")
+	flag.StringVar(&flagd, "d", "", "name of a device")
+	flag.StringVar(&flagf, "f", "", "firmware file name")
+
+	flag.Parse()
+	flagdPresent = (flagd != "")
+	flagfPresent = (flagf != "")
 }
 
 // Call the cancel function after a deadline.  Each time any value is received
@@ -105,14 +128,50 @@ func getDevices() {
 	time.Sleep(1 * time.Second)
 }
 
+// Print out the current firmware info for a device
+func deviceInfo(device string) {
+	info := []string{ "name", "version", "checksum" }
+
+	dmap, ok := deviceMap[device]
+	if !ok {
+		fmt.Printf("Device %s not found in mqtt database\n", device)
+		return
+	}
+
+	fmt.Printf("%s:\n", device)
+	for _, field := range info {
+		v, ok := dmap["$fw/" + field]
+		if !ok {
+			fmt.Printf("\tFW %s is missing\n", field)
+		} else {
+			fmt.Printf("\tFW %s: %s\n", field, v)
+		}
+	}
+}
+
+func fileInfo(file string) {
+	fmt.Printf("File info for file %s is not yet implemented\n", file)
+}
+
 func main() {
 	//mqtt.DEBUG = log.New(os.Stdout, "", 0)
 	mqtt.ERROR = log.New(os.Stdout, "", 0)
 
 	getDevices()
 
-	fmt.Printf("Found these devices:\n")
-	for k, _ := range deviceMap {
-		fmt.Printf("\t%s\n", k)
+	// multiple modes
+	if flagl {
+		if flagfPresent {
+			fileInfo(flagf)
+		} else if flagdPresent {
+			deviceInfo(flagd)
+		} else {
+			fmt.Printf("Found these devices:\n")
+			for k, _ := range deviceMap {
+				deviceInfo(k)
+			}
+		}
+	} else {
+		fmt.Printf("Only list mode (\"-l\") is presently implemented\n")
 	}
 }
