@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"io"
 	"time"
 	"strings"
-	//"strconv"
+	"strconv"
 	"regexp"
 	"context"
 	"flag"
+	"crypto/md5"
 
 	"github.com/eclipse/paho.mqtt.golang"
 )
@@ -149,8 +151,39 @@ func deviceInfo(device string) {
 	}
 }
 
+func fileDigest(file string) string {
+	f, err := os.Open(file)
+	if err != nil {
+		fmt.Printf("Cannot open file %s for reading\n", file)
+		return ""
+	}
+	defer f.Close()
+
+	h := md5.New()
+	if _, err := io.Copy(h, f); err != nil {
+		fmt.Printf("I/O error reading file %s\n", file)
+		return ""
+	}
+
+	// convert the digest from an array of bytes to a hex string
+	d := h.Sum(nil)
+	s := ""
+	for _, b := range d {
+		t := strconv.FormatUint(uint64(b), 16)
+		if len(t) < 2 {
+			s += "0"
+		}
+		s += t
+	}
+	return s
+}
+
 func fileInfo(file string) {
-	fmt.Printf("File info for file %s is not yet implemented\n", file)
+	fmt.Printf("File %s:\n", file)
+	digest := fileDigest(file)
+	if digest  != "" {
+		fmt.Printf("\tDigest: %s\n", digest)
+	}
 }
 
 func main() {
