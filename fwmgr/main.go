@@ -12,6 +12,7 @@ import (
 	"strings"
 	//"strconv"
 	"regexp"
+	"context"
 
 	"github.com/eclipse/paho.mqtt.golang"
 )
@@ -21,11 +22,29 @@ var (
 	deviceMap map[string]map[string]string		// all the properties of all the devices
 	deviceMatch * regexp.Regexp = regexp.MustCompile("devices/([a-zA-Z0-9\\-]+)")
 	deviceSubTopicMatch * regexp.Regexp = regexp.MustCompile("devices/[a-zA-Z0-9\\-]+/(.*)")
+	timeoutContext context.Context
+	timeoutChannel chan int = make(chan int)
 )
 
 func init() {
 	epoch, _ = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
 	deviceMap = make(map[string]map[string]string)
+}
+
+// Call the cancel function after a deadline.  Each time any value is received
+// on the channel, the deadline is extended.
+func timeoutRoutine(c context.Context, cf context.CancelFunc, d time.Duration, ch chan int) {
+	for {
+		subContext, cfl := context.WithTimeout(c, d)
+		select {
+		case <-subContext.Done():
+			cfl()
+			cf()
+			return
+		case <-ch:
+			cfl()
+		}
+	}
 }
 
 var f1 mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
@@ -40,6 +59,9 @@ var f1 mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 	if strings.Contains(topic, "firmware") {
 		payload = "(suppressed)"
 	}
+
+	// tell the world we are still working
+	timeoutChannel <- 0
 
 	device := deviceMatch.FindStringSubmatch(topic)[1]
 	deviceSubTopic := deviceSubTopicMatch.FindStringSubmatch(topic)[1]
@@ -66,9 +88,14 @@ func getDevices() {
 		os.Exit(1)
 	}
 
-	time.Sleep(10 * time.Second)
+	// Set up to wait for 1 second after last message is received
+	timeoutContext, cf := context.WithCancel(context.Background())
+	go timeoutRoutine(timeoutContext, cf, time.Second, timeoutChannel)
+	select {
+	case <-timeoutContext.Done():
+	}
 
-	if token := c.Unsubscribe("go-mqtt/sample"); token.Wait() && token.Error() != nil {
+	if token := c.Unsubscribe("devices/#"); token.Wait() && token.Error() != nil {
 		fmt.Println(token.Error())
 		os.Exit(1)
 	}
