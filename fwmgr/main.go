@@ -54,6 +54,27 @@ func init() {
 	flag.Parse()
 	flagdPresent = (flagd != "")
 	flagfPresent = (flagf != "")
+
+	errors := 0
+
+	if flagF && !flagdPresent {
+		fmt.Printf("-F (Force) requires -d <dev>\n")
+		errors += 1
+	}
+
+	if flagu && !flagdPresent {
+		fmt.Printf("-u (update) requires -d <device>\n")
+		errors += 1
+	}
+
+	if flagu && !flagfPresent {
+		fmt.Printf("-u (update) requires -f <firmware file>\n")
+		errors += 1
+	}
+
+	if errors > 0 {
+		os.Exit(1)
+	}
 }
 
 // Call the cancel function after a deadline.  Each time any value is received
