@@ -5,39 +5,39 @@
 package main
 
 import (
+	"context"
+	"crypto/md5"
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
-	"io"
-	"time"
-	"strings"
-	"strconv"
 	"regexp"
-	"context"
-	"flag"
-	"crypto/md5"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/eclipse/paho.mqtt.golang"
 )
 
 var (
-	flagu bool
-	flagl bool
-	flagD bool
-	flagF bool
-	flagd string
-	flagf string
+	flagu        bool
+	flagl        bool
+	flagD        bool
+	flagF        bool
+	flagd        string
+	flagf        string
 	flagdPresent bool
 	flagfPresent bool
 )
 
 var (
-	epoch time.Time
-	deviceMap map[string]map[string]string		// all the properties of all the devices
-	deviceMatch * regexp.Regexp = regexp.MustCompile("devices/([a-zA-Z0-9\\-]+)")
-	deviceSubTopicMatch * regexp.Regexp = regexp.MustCompile("devices/[a-zA-Z0-9\\-]+/(.*)")
-	timeoutContext context.Context
-	timeoutChannel chan int = make(chan int)
+	epoch               time.Time
+	deviceMap           map[string]map[string]string // all the properties of all the devices
+	deviceMatch         *regexp.Regexp               = regexp.MustCompile("devices/([a-zA-Z0-9\\-]+)")
+	deviceSubTopicMatch *regexp.Regexp               = regexp.MustCompile("devices/[a-zA-Z0-9\\-]+/(.*)")
+	timeoutContext      context.Context
+	timeoutChannel      chan int = make(chan int)
 )
 
 func init() {
@@ -111,7 +111,7 @@ var f1 mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 
 	device := deviceMatch.FindStringSubmatch(topic)[1]
 	deviceSubTopic := deviceSubTopicMatch.FindStringSubmatch(topic)[1]
-	if  deviceMap[device] == nil {
+	if deviceMap[device] == nil {
 		deviceMap[device] = make(map[string]string)
 	}
 	deviceMap[device][deviceSubTopic] = payload
@@ -153,7 +153,7 @@ func getDevices() {
 
 // Print out the current firmware info for a device
 func deviceInfo(device string) {
-	info := []string{ "name", "version", "checksum" }
+	info := []string{"name", "version", "checksum"}
 
 	dmap, ok := deviceMap[device]
 	if !ok {
@@ -163,7 +163,7 @@ func deviceInfo(device string) {
 
 	fmt.Printf("%s:\n", device)
 	for _, field := range info {
-		v, ok := dmap["$fw/" + field]
+		v, ok := dmap["$fw/"+field]
 		if !ok {
 			fmt.Printf("\tFW %s is missing\n", field)
 		} else {
@@ -202,30 +202,58 @@ func fileDigest(file string) string {
 func fileInfo(file string) {
 	fmt.Printf("File %s:\n", file)
 	digest := fileDigest(file)
-	if digest  != "" {
+	if digest != "" {
 		fmt.Printf("\tDigest: %s\n", digest)
 	}
+}
+
+func updateMode() {
+	getDevices()
+	devInfo, ok := deviceMap[flagd]
+	if !ok {
+		fmt.Printf("Cannot find device %s in device map\n", flagd)
+		return
+	}
+
+	digest := fileDigest(flagf)
+	if digest == "" {
+		fmt.Printf("Cannot get digest for firmware file %s\n", flagf)
+		return
+	}
+	if devInfo["$fw/checksum"] == digest {
+		fmt.Printf("Device %s already running firmware with this digest\n", flagd)
+		return
+	}
+	if flagD {
+		fmt.Printf("device digest .%s.\nfile digest .%s.\n",
+			devInfo["$fw/checksum"],
+			digest)
+	}
+
+	fmt.Printf("Firmware Update NYI\n")
 }
 
 func main() {
 	//mqtt.DEBUG = log.New(os.Stdout, "", 0)
 	mqtt.ERROR = log.New(os.Stdout, "", 0)
 
-	getDevices()
-
 	// multiple modes
 	if flagl {
 		if flagfPresent {
 			fileInfo(flagf)
 		} else if flagdPresent {
+			getDevices()
 			deviceInfo(flagd)
 		} else {
 			fmt.Printf("Found these devices:\n")
+			getDevices()
 			for k, _ := range deviceMap {
 				deviceInfo(k)
 			}
 		}
+	} else if flagu {
+		updateMode()
 	} else {
-		fmt.Printf("Only list mode (\"-l\") is presently implemented\n")
+		fmt.Printf("Only list (\"-l\") and update (\"-u\") modes are presently implemented\n")
 	}
 }
