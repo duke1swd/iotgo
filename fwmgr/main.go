@@ -225,9 +225,30 @@ func updateMode() {
 		return
 	}
 	if flagD {
-		fmt.Printf("device digest .%s.\nfile digest .%s.\n",
+		fmt.Printf("Device digest .%s.\n  File digest .%s.\n",
 			devInfo["$fw/checksum"],
 			digest)
+	}
+
+	if devInfo["$online"] != "true" {
+		fmt.Printf("Device %s is not online.\n", flagd)
+		return
+	}
+
+	if flagD {
+		fmt.Printf("Device %s is online.\n", flagd)
+	}
+
+	status, ok := devInfo["$implementation/ota/status"]
+	if ok {
+		fmt.Printf("Device %s is showing OTA status \"%s\" before OTA starts\n",
+			flagd,
+			status)
+		fmt.Printf("Use -F mode to clear this\n")
+		return
+	}
+	if flagD {
+		fmt.Printf("Device %s OTA status is clear\n", flagd)
 	}
 
 	fmt.Printf("Firmware Update NYI\n")
