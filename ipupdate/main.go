@@ -145,7 +145,6 @@ func updateLoop() {
 
 		if !ipValid {
 			ipValid = true
-			lastUpdateTime = time.Now()
 		} else if newIP.Equal(myIP) {
 			howLong = int(time.Since(lastUpdateTime) / time.Second)
 			logSimple.Log(ctx, 0, 0, howLong, "No IP Address Change")
@@ -153,7 +152,7 @@ func updateLoop() {
 		}
 
 		howLong = int(time.Since(lastUpdateTime) / time.Second)
-		logSimple.Log(ctx, 0, 3, 0, "New IP address: "+myIP.String())
+		logSimple.Log(ctx, 0, 3, howLong, "New IP address: "+myIP.String())
 		if !postIP(newIP) {
 			logSimple.Log(ctx, 0, 4, 0, "Failed to update IP address")
 		} else {
