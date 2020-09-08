@@ -38,6 +38,7 @@ var (
 	deviceSubTopicMatch *regexp.Regexp               = regexp.MustCompile("devices/[a-zA-Z0-9\\-]+/(.*)")
 	timeoutContext      context.Context
 	timeoutChannel      chan int = make(chan int)
+	homieVersion        int      = 3
 )
 
 func init() {
@@ -230,13 +231,23 @@ func updateMode() {
 			digest)
 	}
 
-	if devInfo["$online"] != "true" {
-		fmt.Printf("Device %s is not online.\n", flagd)
+	if devInfo["$online"] == "true" {
+		homieVersion = 2
+	} else if devInfo["$state"] == "ready" {
+		homieVersion = 3
+	} else {
+		fmt.Printf("Device %s is not online and/or ready.\n", flagd)
 		return
 	}
 
 	if flagD {
 		fmt.Printf("Device %s is online.\n", flagd)
+		fmt.Printf("Homie version is %d.\n", homieVersion)
+	}
+
+	if homieVersion != 3 {
+		fmt.Printf("Upgrade only supports Homie version 3 at the moment.  Device version is %d\n", homieVersion)
+		return
 	}
 
 	status, ok := devInfo["$implementation/ota/status"]
