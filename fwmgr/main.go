@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"regexp"
@@ -39,6 +40,7 @@ var (
 	timeoutContext      context.Context
 	timeoutChannel      chan int = make(chan int)
 	homieVersion        int      = 3
+	otaChannel          chan int = make(chan int)
 )
 
 func init() {
@@ -208,6 +210,76 @@ func fileInfo(file string) {
 	}
 }
 
+/*
+ * This is the message handler for the OTA status messages.  It drives the OTA state machine forward.
+ */
+var lastMessage string = ""
+var f2 mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+	//topic := msg.Topic()
+	message := string(msg.Payload())
+	if message == lastMessage { // sometimes they repeat
+		return
+	}
+	lastMessage = message
+
+	if flagD {
+		fmt.Printf("OTA Status message: %s\n", message)
+	}
+}
+
+/*
+ * This routine subscribes to the OTA status messages and begins the firmware upload
+ * by publishing the firmware.
+ */
+func publishFirmware(digest string) {
+	opts := mqtt.NewClientOptions().AddBroker("tcp://127.0.0.1:1883").SetClientID("fw-test")
+	opts.SetKeepAlive(60 * time.Second)
+	opts.SetDefaultPublishHandler(f2)
+	opts.SetPingTimeout(1 * time.Second)
+
+	// Create a client for this task
+	c := mqtt.NewClient(opts)
+	if token := c.Connect(); token.Wait() && token.Error() != nil {
+		panic(token.Error())
+	}
+
+	defer c.Disconnect(250)
+
+	// Subscribe to the OTA updates
+	// The handler for these messages drives the OTA process forward
+	subscription := "devices/" + flagd + "/$implementation/ota/status"
+
+	if token := c.Subscribe(subscription, 0, nil); token.Wait() && token.Error() != nil {
+		fmt.Println(token.Error())
+		os.Exit(1)
+	}
+
+	defer func() {
+		if token := c.Unsubscribe(subscription); token.Wait() && token.Error() != nil {
+			fmt.Println(token.Error())
+			os.Exit(1)
+		}
+	}()
+
+	// publish the firmware.  If all goes well this is all that is required to get the update done.
+	topic := "devices/" + flagd + "/implmentation/$ota/" + digest
+	firmwarePayload, err := ioutil.ReadFile(flagf)
+	if err != nil {
+		panic(err)
+	}
+
+	// qos = 0, retain = false
+	publishToken := c.Publish(topic, 0, false, firmwarePayload)
+	if publishToken.Wait() && publishToken.Error() != nil {
+		panic(publishToken.Error())
+	}
+
+	// wait for OTA to finish, or die
+	select {
+	case <-otaChannel:
+	}
+}
+
 func updateMode() {
 	getDevices()
 	devInfo, ok := deviceMap[flagd]
@@ -262,7 +334,7 @@ func updateMode() {
 		fmt.Printf("Device %s OTA status is clear\n", flagd)
 	}
 
-	fmt.Printf("Firmware Update NYI\n")
+	publishFirmware(digest)
 }
 
 func main() {
