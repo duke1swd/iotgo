@@ -215,16 +215,59 @@ func fileInfo(file string) {
  */
 var lastMessage string = ""
 var f2 mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
-	//topic := msg.Topic()
+
 	message := string(msg.Payload())
+	if flagD {
+		fmt.Printf("OTA Status message: %s\n", message)
+	}
+
+	topic := msg.Topic()
+	if !strings.HasSuffix(topic, "$implementation/ota/status") {
+		return
+	}
+
 	if message == lastMessage { // sometimes they repeat
 		return
 	}
 	lastMessage = message
 
-	if flagD {
-		fmt.Printf("OTA Status message: %s\n", message)
+	status, err := strconv.Atoi(message)
+	if err != nil {
+		return
 	}
+
+	if status == 202 {
+		fmt.Printf("Firmware update accepted.\n")
+	} else if status == 206 {
+		// update on how things are progressing
+		var bytes int
+		var total int
+		var discard int
+		r, err := fmt.Sscanf(message, "%d %d/%d", &discard, &bytes, &total)
+		if r != 3 || err != nil {
+			fmt.Printf("\nUnknown status message:", message)
+		} else {
+			fmt.Printf("Status: %.1f%%\r", float32(bytes)/float32(total)*100.)
+		}
+	} else if status == 304 {
+		// new firmware same as old
+		fmt.Printf("Firmware is already up to date.\n")
+		f2done(status)
+	} else if status == 403 {
+		fmt.Printf("Device OTA disabled.  Firmware rejected.\n")
+		f2done(status)
+	} else if status > 300 && status < 500 {
+		fmt.Printf("\nUnknown OTA error: '%s'.  Aborting\n", message)
+		f2done(status)
+	} else {
+		fmt.Printf("\nUnknown OTA error: '%s'.\n", message)
+	}
+}
+
+// Tell the world the OTA is finished
+// status 0 == OK.
+func f2done(status int) {
+	otaChannel <- status
 }
 
 /*
@@ -289,6 +332,37 @@ func publishFirmware(digest string) {
 	select {
 	case <-otaChannel:
 	}
+
+	// clean up the status message
+	topic = "devices/" + flagd + "/$implementation/ota/status"
+	publishToken = c.Publish(topic, 0, true, "")
+	if publishToken.Wait() && publishToken.Error() != nil {
+		panic(publishToken.Error())
+	}
+}
+
+/*
+ * This routine cleans up the OTA status message
+ */
+func cleanUp() {
+	opts := mqtt.NewClientOptions().AddBroker("tcp://127.0.0.1:1883").SetClientID("fw-test")
+	opts.SetKeepAlive(60 * time.Second)
+	opts.SetPingTimeout(1 * time.Second)
+
+	// Create a client for this task
+	c := mqtt.NewClient(opts)
+	if token := c.Connect(); token.Wait() && token.Error() != nil {
+		panic(token.Error())
+	}
+
+	defer c.Disconnect(250)
+
+	// clean up the status message
+	topic := "devices/" + flagd + "/$implementation/ota/status"
+	publishToken := c.Publish(topic, 0, true, "")
+	if publishToken.Wait() && publishToken.Error() != nil {
+		panic(publishToken.Error())
+	}
 }
 
 func updateMode() {
@@ -304,10 +378,12 @@ func updateMode() {
 		fmt.Printf("Cannot get digest for firmware file %s\n", flagf)
 		return
 	}
+
 	if devInfo["$fw/checksum"] == digest {
 		fmt.Printf("Device %s already running firmware with this digest\n", flagd)
 		return
 	}
+
 	if flagD {
 		fmt.Printf("Device digest .%s.\n  File digest .%s.\n",
 			devInfo["$fw/checksum"],
@@ -368,7 +444,13 @@ func main() {
 		}
 	} else if flagu {
 		updateMode()
+	} else if flagF {
+		if !flagdPresent {
+			fmt.Printf("-F requires a device (-d)\n")
+		} else {
+			cleanUp()
+		}
 	} else {
-		fmt.Printf("Only list (\"-l\") and update (\"-u\") modes are presently implemented\n")
+		fmt.Printf("Only list (\"-l\"), cleanup (\"-F\"), and update (\"-u\") modes are presently implemented\n")
 	}
 }
