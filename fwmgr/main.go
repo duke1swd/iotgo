@@ -261,8 +261,16 @@ func publishFirmware(digest string) {
 		}
 	}()
 
+	if flagD {
+		fmt.Printf("Subscribed to %s\n", subscription)
+	}
+
 	// publish the firmware.  If all goes well this is all that is required to get the update done.
-	topic := "devices/" + flagd + "/implmentation/$ota/" + digest
+	topic := "devices/" + flagd + "/$implementation/ota/firmware/" + digest
+	if flagD {
+		fmt.Printf("Publishing firmware to topic %s\n", topic)
+	}
+
 	firmwarePayload, err := ioutil.ReadFile(flagf)
 	if err != nil {
 		panic(err)
@@ -272,6 +280,9 @@ func publishFirmware(digest string) {
 	publishToken := c.Publish(topic, 0, false, firmwarePayload)
 	if publishToken.Wait() && publishToken.Error() != nil {
 		panic(publishToken.Error())
+	}
+	if flagD {
+		fmt.Printf("Firmware published\n")
 	}
 
 	// wait for OTA to finish, or die
