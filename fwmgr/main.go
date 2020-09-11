@@ -41,6 +41,7 @@ var (
 	timeoutChannel      chan int = make(chan int)
 	homieVersion        int      = 3
 	otaChannel          chan int = make(chan int)
+	returnedChecksum    string   = ""
 )
 
 func init() {
@@ -215,52 +216,73 @@ func fileInfo(file string) {
  */
 var lastMessage string = ""
 var f2 mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+		var status int
 
 	message := string(msg.Payload())
-	if flagD {
-		fmt.Printf("OTA Status message: %s\n", message)
-	}
-
 	topic := msg.Topic()
-	if !strings.HasSuffix(topic, "$implementation/ota/status") {
-		return
+
+	if flagD {
+		fmt.Printf("OTA Status message: %s->%s\n", topic, message)
 	}
 
-	if message == lastMessage { // sometimes they repeat
-		return
-	}
-	lastMessage = message
-
-	status, err := strconv.Atoi(message)
-	if err != nil {
-		return
-	}
-
-	if status == 202 {
-		fmt.Printf("Firmware update accepted.\n")
-	} else if status == 206 {
-		// update on how things are progressing
-		var bytes int
-		var total int
-		var discard int
-		r, err := fmt.Sscanf(message, "%d %d/%d", &discard, &bytes, &total)
-		if r != 3 || err != nil {
-			fmt.Printf("\nUnknown status message:", message)
-		} else {
-			fmt.Printf("Status: %.1f%%\r", float32(bytes)/float32(total)*100.)
+	if strings.HasSuffix(topic, "$implementation/ota/status") {
+		if flagD {
+			fmt.Printf("is status\n")
 		}
-	} else if status == 304 {
-		// new firmware same as old
-		fmt.Printf("Firmware is already up to date.\n")
-		f2done(status)
-	} else if status == 403 {
-		fmt.Printf("Device OTA disabled.  Firmware rejected.\n")
-		f2done(status)
-	} else if status > 300 && status < 500 {
-		fmt.Printf("\nUnknown OTA error: '%s'.  Aborting\n", message)
-		f2done(status)
-	} else {
-		fmt.Printf("\nUnknown OTA error: '%s'.\n", message)
+		if message == lastMessage { // sometimes they repeat
+			fmt.Printf("repeated\n")
+			return
+		}
+		lastMessage = message
+
+		n, err := fmt.Sscanf(message, "%d", &status)
+		if err != nil {
+			fmt.Printf("got error scanning status: %v\n", err)
+			return
+		}
+		if n != 1 {
+			fmt.Printf("Sscanf of status failed.  n=%d\n", n)
+			return
+		}
+
+		if status == 200 {
+			fmt.Printf("Firmware update successful.\n")
+		} else if status == 202 {
+			fmt.Printf("Firmware update accepted.\n")
+		} else if status == 206 {
+			// update on how things are progressing
+			var bytes int
+			var total int
+			var discard int
+			r, err := fmt.Sscanf(message, "%d %d/%d", &discard, &bytes, &total)
+			if r != 3 || err != nil {
+				fmt.Printf("\nUnknown status message:", message)
+			} else {
+				fmt.Printf("Status: %.1f%%\r", float32(bytes)/float32(total)*100.)
+			}
+		} else if status == 304 {
+			// new firmware same as old
+			fmt.Printf("Firmware is already up to date.\n")
+			f2done(status)
+		} else if status == 400 {
+			fmt.Printf("Malformed firmware checksum.  Firmware rejected.\n")
+			f2done(status)
+		} else if status == 403 {
+			fmt.Printf("Device OTA disabled.  Firmware rejected.\n")
+			f2done(status)
+		} else if status == 500 {
+			fmt.Printf("Internal error.  Firmware rejected.\n")
+			f2done(status)
+		} else if status > 300 && status < 500 {
+			fmt.Printf("\nUnknown OTA error: '%s'.  Aborting\n", message)
+			f2done(status)
+		} else {
+			fmt.Printf("\nUnknown OTA error: '%s'.\n", message)
+		}
+	} else if strings.HasSuffix(topic, "$fw/checksum") {
+		returnedChecksum = message
+		f2done(0)
+		return
 	}
 }
 
@@ -329,8 +351,23 @@ func publishFirmware(digest string) {
 	}
 
 	// wait for OTA to finish, or die
-	select {
-	case <-otaChannel:
+	//select {
+	//case <-otaChannel:
+	//}
+	status := <-otaChannel
+	if flagD {
+		fmt.Printf("got status %d back from message handler\n", status)
+	}
+
+	// Note that if status is not zero an error has already been printed
+	if status == 0 {
+		if returnedChecksum == digest {
+			fmt.Printf("\nDone\n")
+		} else {
+			fmt.Printf("\nUpload Failed.\n")
+			fmt.Printf("Sent with digest:     %s\n", digest)
+			fmt.Printf("Received with digest: %s\n", digest)
+		}
 	}
 
 	// clean up the status message
