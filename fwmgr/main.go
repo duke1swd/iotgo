@@ -216,7 +216,7 @@ func fileInfo(file string) {
  */
 var lastMessage string = ""
 var f2 mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
-		var status int
+	var status int
 
 	message := string(msg.Payload())
 	topic := msg.Topic()
@@ -226,18 +226,20 @@ var f2 mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 	}
 
 	if strings.HasSuffix(topic, "$implementation/ota/status") {
-		if flagD {
-			fmt.Printf("is status\n")
-		}
 		if message == lastMessage { // sometimes they repeat
-			fmt.Printf("repeated\n")
 			return
 		}
 		lastMessage = message
 
+		// when we clear out the OTA status code 200, we'll get a null message.
+		if message == "" {
+			return
+		}
+
 		n, err := fmt.Sscanf(message, "%d", &status)
 		if err != nil {
 			fmt.Printf("got error scanning status: %v\n", err)
+			fmt.Printf("status is .%s.\n", status)
 			return
 		}
 		if n != 1 {
@@ -246,7 +248,7 @@ var f2 mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 		}
 
 		if status == 200 {
-			fmt.Printf("Firmware update successful.\n")
+			fmt.Printf("Firmware upload successful.  Awaiting device reboot.\n")
 		} else if status == 202 {
 			fmt.Printf("Firmware update accepted.\n")
 		} else if status == 206 {
@@ -314,14 +316,14 @@ func publishFirmware(digest string) {
 	// The handler for these messages drives the OTA process forward
 	subscription := "devices/" + flagd + "/$implementation/ota/status"
 
-	if token := c.Subscribe(subscription, 0, nil); token.Wait() && token.Error() != nil {
-		fmt.Println(token.Error())
+	if token1 := c.Subscribe(subscription, 0, nil); token1.Wait() && token1.Error() != nil {
+		fmt.Println(token1.Error())
 		os.Exit(1)
 	}
 
 	defer func() {
-		if token := c.Unsubscribe(subscription); token.Wait() && token.Error() != nil {
-			fmt.Println(token.Error())
+		if token1 := c.Unsubscribe(subscription); token1.Wait() && token1.Error() != nil {
+			fmt.Println(token1.Error())
 			os.Exit(1)
 		}
 	}()
@@ -329,6 +331,30 @@ func publishFirmware(digest string) {
 	if flagD {
 		fmt.Printf("Subscribed to %s\n", subscription)
 	}
+
+	// Subscribe to the FW stuff
+	// We will use an update to the firmware checksum to validate the upload
+	subscription = "devices/" + flagd + "/$fw/#"
+
+	if token2 := c.Subscribe(subscription, 0, nil); token2.Wait() && token2.Error() != nil {
+		fmt.Println(token2.Error())
+		os.Exit(1)
+	}
+
+	defer func() {
+		if token2 := c.Unsubscribe(subscription); token2.Wait() && token2.Error() != nil {
+			fmt.Println(token2.Error())
+			os.Exit(1)
+		}
+	}()
+
+	if flagD {
+		fmt.Printf("Subscribed to %s\n", subscription)
+	}
+
+	// After the subscriptions are set up, we expect to get one "complete" signal back from
+	// the message handler.  This is because the checksum message is persistent.
+	_ = <-otaChannel
 
 	// publish the firmware.  If all goes well this is all that is required to get the update done.
 	topic := "devices/" + flagd + "/$implementation/ota/firmware/" + digest
@@ -351,9 +377,6 @@ func publishFirmware(digest string) {
 	}
 
 	// wait for OTA to finish, or die
-	//select {
-	//case <-otaChannel:
-	//}
 	status := <-otaChannel
 	if flagD {
 		fmt.Printf("got status %d back from message handler\n", status)
@@ -366,7 +389,7 @@ func publishFirmware(digest string) {
 		} else {
 			fmt.Printf("\nUpload Failed.\n")
 			fmt.Printf("Sent with digest:     %s\n", digest)
-			fmt.Printf("Received with digest: %s\n", digest)
+			fmt.Printf("Received with digest: %s\n", returnedChecksum)
 		}
 	}
 
