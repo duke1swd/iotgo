@@ -60,7 +60,7 @@ func main() {
 
 	time.Sleep(600 * time.Second)
 
-	if token := c.Unsubscribe("go-mqtt/sample"); token.Wait() && token.Error() != nil {
+	if token := c.Unsubscribe("#"); token.Wait() && token.Error() != nil {
 		fmt.Println(token.Error())
 		os.Exit(1)
 	}
