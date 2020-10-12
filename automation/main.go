@@ -99,6 +99,8 @@ func main() {
 		}
 	*/
 
+	logMessage("home automation daemon started")
+
 	// sleep forever
 	for {
 		time.Sleep(1 * time.Second)
@@ -113,7 +115,7 @@ func logMessage(m string) {
 	}
 	defer f.Close()
 
-	formattedMsg := time.Now().Format("Mon Jan 2 15:04:05 2006") + "  " + m
+	formattedMsg := time.Now().Format("Mon Jan 2 15:04:05 2006") + "  " + m + "\n"
 
 	_, err = f.WriteString(formattedMsg)
 	if err != nil {
