@@ -11,7 +11,7 @@
 		Publish to: Zoneminder APIs
  *	R3: The alarm state turns on or off an LED indicator
 		Subscribe to: environment/alarm-state
-		Publish to: devices/led-0001/led/on
+		Publish to: devices/led-0001/led/on/set
  *
 */
 
@@ -22,6 +22,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/eclipse/paho.mqtt.golang"
@@ -47,13 +48,15 @@ func init() {
 /*
  * Rule 1: subscribe to the device level alarm state
  * and publish to the environment level.
+ *
+ * The value of each alarm state is a code sent to the LED controller
  */
-var alarmStates = map[string]bool{
-	"disarmed":        true,
-	"armed-stay":      true,
-	"alarmed-burglar": true,
-	"alarmed-fire":    true,
-	"armed-away":      true,
+var alarmStates = map[string]int{
+	"disarmed":        0,
+	"armed-stay":      10,
+	"alarmed-burglar": 5,
+	"alarmed-fire":    5,
+	"armed-away":      1,
 }
 
 var r1handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
@@ -63,16 +66,44 @@ var r1handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 		client.Publish("environment/alarm-state", 0, true, payload)
 		logMessage("Alarm state: " + payload)
 	} else {
-		logMessage("Invalid alarm state: " + payload)
+		logMessage("Invalid device alarm state: " + payload)
 	}
 }
 
-/*
 var r23handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
-	topic := msg.Topic()
+
 	payload := string(msg.Payload())
+	ledValue, ok := alarmStates[payload]
+	log.Printf("r23 payload = %s\n", payload)
+	if !ok {
+		logMessage("Invalid environment alarm state: " + payload)
+		return
+	}
+
+	// Rule 2: Interior cameras are on if unless the alarm is off
+	if payload == "disarmed" {
+		zoneHome()
+	} else {
+		zoneAway()
+	}
+
+	// Rule 3: Display alarm state on the LED.
+	client.Publish("devices/led-0001/led/on/set", 0, true, strconv.Itoa(ledValue))
 }
-*/
+
+// Turn on the interior cameras
+func zoneAway() {
+	zoneState("Away")
+}
+
+// Turn off the interior cameras
+func zoneHome() {
+	zoneState("Home")
+}
+
+// Set a run state in Zoneminder
+func zoneState(state string) {
+}
 
 func main() {
 
@@ -92,12 +123,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	/*
-		if token := c.Subscribe("environment/alarm-state", 0, r23handler); token.Wait() && token.Error() != nil {
-			fmt.Println(token.Error())
-			os.Exit(1)
-		}
-	*/
+	if token := client.Subscribe("environment/alarm-state", 0, r23handler); token.Wait() && token.Error() != nil {
+		fmt.Println(token.Error())
+		os.Exit(1)
+	}
 
 	logMessage("home automation daemon started")
 
