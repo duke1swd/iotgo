@@ -118,6 +118,8 @@ func main() {
 		panic(token.Error())
 	}
 
+	logMessage("home automation daemon started")
+
 	if token := client.Subscribe("devices/alarm-state-0001/alarm-state/state", 0, r1handler); token.Wait() && token.Error() != nil {
 		fmt.Println(token.Error())
 		os.Exit(1)
@@ -127,8 +129,6 @@ func main() {
 		fmt.Println(token.Error())
 		os.Exit(1)
 	}
-
-	logMessage("home automation daemon started")
 
 	// sleep forever
 	for {
