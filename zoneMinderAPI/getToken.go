@@ -11,6 +11,7 @@ import (
 
 var (
 	Token string
+	Client *resty.Client
 )
 
 const defaultCredentialsFileName = "/usr/local/credentials/zoneminderapi.json"
@@ -56,9 +57,9 @@ func init() {
 			credentialsFileName)
 	}
 
-	client := resty.New()
+	Client = resty.New()
 
-	resp, err := client.R().
+	resp, err := Client.R().
 		SetHeader("Content-Type", "application/json").
 		SetQueryParams(map[string]string{
 			"user": user,
