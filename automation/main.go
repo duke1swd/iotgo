@@ -3,15 +3,37 @@
  *
  * Ideally this is all driven by rules and such.
  * For now these items will be hard-coded:
+
  * 	R1: The alarm state is propagated to an environmental state
  		Subscribe to: devices/alarm-state-0001/alarm-state/state
 		Publish to:   environment/alarm-state
+
  *	R2: The alarm state triggers changes in the state of ZoneMinder
 		Subscribe to: environment/alarm-state
 		Publish to: Zoneminder APIs
+
  *	R3: The alarm state turns on or off an LED indicator
 		Subscribe to: environment/alarm-state
 		Publish to: devices/led-0001/led/on/set
+
+ *	R4: The lux value is propogated to an environmental state
+		Subscribe to:
+			devices/environ-0001/lux/lux
+			devices/environ-0001/lux/time-last-update
+		Publish to: environment/outdoor-lux
+		Publish every data point received, with hysterisis of 2 lux.
+		Supress publication whenever the "time-last-update" is more than 3 minutes old.
+		If the data is more than 10 minutes old, publish "unknown" as the lux value
+
+ *	R5: The temp value is propogated to an environmental state
+		Subscribe to:
+			devices/environ-0001/temp/temp
+			devices/environ-0001/temp/time-last-update
+		Publish to: environment/outdoor-temp
+		Publish every data point received, with hysterisis of .5 degrees
+		Supress publication whenever the "time-last-update" is more than 3 minutes old.
+		If the data is more than 10 minutes old, publish "unknown" as the temp value
+
  *
 */
 
@@ -23,6 +45,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/eclipse/paho.mqtt.golang"
@@ -35,7 +58,21 @@ var (
 	client          mqtt.Client
 	logDirectory    string
 	fullLogFileName string
+	sensorTime      map[string]time.Time
+	epoch           time.Time
 )
+
+type sensorStateType struct {
+	hysterisis float64
+	lastValue  float64
+	updateTime time.Time
+}
+
+// This is the list of sensors.
+var sensorStates = map[string]sensorStateType{
+	"lux":  {2., 0., *new(time.Time)},
+	"temp": {.5, 0., *new(time.Time)},
+}
 
 func init() {
 	logDirectory = os.Getenv("LOGDIR")
@@ -43,6 +80,13 @@ func init() {
 		logDirectory = defaultLogDirectory
 	}
 	fullLogFileName = filepath.Join(logDirectory, logFileName)
+
+	// set the time to a long time ago.
+	for _, s := range sensorStates {
+		s.updateTime, _ = time.Parse("2006-Jan-02 MST", "2000-Jan-01 EST")
+	}
+
+	epoch, _ = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
 }
 
 /*
@@ -66,9 +110,11 @@ const (
 	DET_OFFLINE
 )
 
-var detState int = DET_UNKNOWN
-var detStateDetailed string = "unknown"
-var lastAlarmState string = "unknown"
+var (
+	detState         int    = DET_UNKNOWN
+	detStateDetailed string = "unknown"
+	lastAlarmState   string = "unknown"
+)
 
 var stateMap = map[string]int{
 	"init":         DET_OFFLINE,
@@ -146,6 +192,44 @@ var r23handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) 
 	client.Publish("devices/led-0001/led/on/set", 0, true, strconv.Itoa(ledValue))
 }
 
+// Changes in the outdoor environment come here
+
+var r45subscriptions = []string{
+	"devices/environ-0001/lux/lux",
+	"devices/environ-0001/lux/time-last-update",
+	"devices/environ-0001/temp/temp",
+	"devices/environ-0001/temp/time-last-update",
+}
+
+var r45handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+	topic := string(msg.Topic())
+	payload := string(msg.Payload())
+
+	topicComponents := strings.Split(topic, "/")
+	sensor := topicComponents[2]
+
+	// Give up if we don't know this sensor
+	if _, ok := sensorStates[sensor]; !ok {
+		return
+	}
+
+	switch topicComponents[3] {
+	case sensor:
+		if time.Since(sensorStates[sensor].updateTime).Seconds() <= 180 {
+			// need to implement hysterisis
+			client.Publish("environment/outdoor-"+sensor, 0, true, payload)
+		}
+	case "time-last-update":
+		// record the time last updated
+		t, err := strconv.ParseInt(payload, 10, 64)
+		if err == nil {
+			m := sensorStates[sensor]
+			m.updateTime = epoch.Add(time.Duration(t) * time.Second)
+			sensorStates[sensor] = m
+		}
+	}
+}
+
 // Turn on the interior cameras
 func zoneAway() {
 	zoneState("Away")
@@ -188,6 +272,13 @@ func main() {
 	if token := client.Subscribe("environment/alarm-state", 0, r23handler); token.Wait() && token.Error() != nil {
 		fmt.Println(token.Error())
 		os.Exit(1)
+	}
+
+	for _, s := range r45subscriptions {
+		if token := client.Subscribe(s, 0, r45handler); token.Wait() && token.Error() != nil {
+			fmt.Println(token.Error())
+			os.Exit(1)
+		}
 	}
 
 	// sleep forever
