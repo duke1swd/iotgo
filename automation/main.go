@@ -21,7 +21,7 @@
 			devices/environ-0001/lux/lux
 			devices/environ-0001/lux/time-last-update
 		Publish to: environment/outdoor-lux
-		Publish every data point received, with hysterisis of 2 lux.
+		Publish every data point received, with hysteresis of 2 lux.
 		Supress publication whenever the "time-last-update" is more than 3 minutes old.
 		If the data is more than 10 minutes old, publish "unknown" as the lux value
 
@@ -30,7 +30,7 @@
 			devices/environ-0001/temp/temp
 			devices/environ-0001/temp/time-last-update
 		Publish to: environment/outdoor-temp
-		Publish every data point received, with hysterisis of .5 degrees
+		Publish every data point received, with hysteresis of .5 degrees
 		Supress publication whenever the "time-last-update" is more than 3 minutes old.
 		If the data is more than 10 minutes old, publish "unknown" as the temp value
 
@@ -40,6 +40,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -60,18 +61,31 @@ var (
 	fullLogFileName string
 	sensorTime      map[string]time.Time
 	epoch           time.Time
+	updateChan      chan interface{}
+	sensorExpire    time.Duration
 )
 
 type sensorStateType struct {
-	hysterisis float64
+	hysteresis float64
 	lastValue  float64
+	updateTime time.Time
+	valueKnown bool
+}
+
+type sensorUpdateValueType struct {
+	name  string
+	value float64
+}
+
+type sensorUpdateTimeType struct {
+	name       string
 	updateTime time.Time
 }
 
 // This is the list of sensors.
 var sensorStates = map[string]sensorStateType{
-	"lux":  {2., 0., *new(time.Time)},
-	"temp": {.5, 0., *new(time.Time)},
+	"lux":  {2., 0., *new(time.Time), false},
+	"temp": {.5, 0., *new(time.Time), false},
 }
 
 func init() {
@@ -87,6 +101,9 @@ func init() {
 	}
 
 	epoch, _ = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
+
+	sensorExpire, _ = time.ParseDuration("120s") // sensor data invalide if not refreshed every minute or so
+	updateChan = make(chan interface{})
 }
 
 /*
@@ -202,6 +219,10 @@ var r45subscriptions = []string{
 }
 
 var r45handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+	var (
+		updateValue sensorUpdateValueType
+		updateTime  sensorUpdateTimeType
+	)
 	topic := string(msg.Topic())
 	payload := string(msg.Payload())
 
@@ -215,17 +236,61 @@ var r45handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) 
 
 	switch topicComponents[3] {
 	case sensor:
-		if time.Since(sensorStates[sensor].updateTime).Seconds() <= 180 {
-			// need to implement hysterisis
-			client.Publish("environment/outdoor-"+sensor, 0, true, payload)
+		// convert sensor value to a float64 and send it to the updater go routine
+		t, err := strconv.ParseFloat(payload, 64)
+		if err == nil {
+			updateValue.name = sensor
+			updateValue.value = t
+			updateChan <- updateValue
 		}
 	case "time-last-update":
-		// record the time last updated
+		// convert sensor last update time to a time.Time and send it to the updater go routine
 		t, err := strconv.ParseInt(payload, 10, 64)
 		if err == nil {
-			m := sensorStates[sensor]
-			m.updateTime = epoch.Add(time.Duration(t) * time.Second)
-			sensorStates[sensor] = m
+			updateTime.name = sensor
+			updateTime.updateTime = epoch.Add(time.Duration(t) * time.Second)
+			updateChan <- updateTime
+		}
+	}
+}
+
+/*
+ * This function is a go routine that serializes updates to the sensorStates map.
+ * It also implements a periodic timeout looking for sensors that have not updated in a while.
+ */
+func sensorUpdateHandler(con context.Context, client mqtt.Client) {
+
+	// every so often wake up whether we've recieved any thing to do or not.
+	timeoutDuration, _ := time.ParseDuration("1m")
+	timeoutContext, _ := context.WithTimeout(con, timeoutDuration)
+	for {
+		select {
+		case data := <-updateChan:
+			switch update := data.(type) {
+			case sensorUpdateValueType:
+				s := sensorStates[update.name]
+				s.lastValue = update.value
+				s.valueKnown = true
+				sensorStates[update.name] = s
+				payload := strconv.FormatFloat(update.value, 'f', 1, 64)
+				client.Publish("environment/outdoor-"+update.name, 0, true, payload)
+			case sensorUpdateTimeType:
+				s := sensorStates[update.name]
+				s.updateTime = update.updateTime
+				sensorStates[update.name] = s
+			}
+		case <-timeoutContext.Done():
+			// once a minute we come here and look for sensors who's last update time
+			// is too old and mark them as unknown.
+			for name, s := range sensorStates {
+				if time.Since(s.updateTime) > sensorExpire && s.valueKnown {
+					s.valueKnown = false
+					log.Printf("Sensor %s off line. Last update %v\n", name, s.updateTime)
+					sensorStates[name] = s
+					client.Publish("environment/outdoor-"+name, 0, true, "offline")
+				}
+			}
+			timeoutContext, _ = context.WithTimeout(con, timeoutDuration)
 		}
 	}
 }
@@ -273,6 +338,8 @@ func main() {
 		fmt.Println(token.Error())
 		os.Exit(1)
 	}
+
+	go sensorUpdateHandler(context.Background(), client)
 
 	for _, s := range r45subscriptions {
 		if token := client.Subscribe(s, 0, r45handler); token.Wait() && token.Error() != nil {
