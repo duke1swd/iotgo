@@ -1,0 +1,12 @@
+[Unit]
+Description=Home Automation Daemon
+After=network-online.target
+
+[Service]
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/usr/local/cloud.google.com/iot-services-274518-6048a7825bd9.json
+Type=simple
+Restart=always
+ExecStart=/usr/local/bin/automation
+
+[Install]
+WantedBy=multi-user.target
