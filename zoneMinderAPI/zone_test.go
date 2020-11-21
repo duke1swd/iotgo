@@ -13,7 +13,15 @@ func TestInit(t *testing.T) {
 }
 
 func TestListConfigs(t *testing.T) {
-	c := GetConfigs()
+	_ = GetConfigs()
+}
 
-	fmt.Println(c)
+func TestGetStates(t *testing.T) {
+	_ = GetStates()
+}
+
+func TestGetState(t *testing.T) {
+	s := GetState("default")
+
+	fmt.Println(s)
 }
