@@ -3,7 +3,7 @@ Description=Home Automation Environment Logger
 After=network-online.target
 
 [Service]
-Environment=MQTTBROKER=tcp://192.168.1.13:1883
+Environment=MQTTBROKER=tcp://DanielPi3:1883
 Environment=LOGDIR=/primary/HomeEnvData
 Type=simple
 Restart=always

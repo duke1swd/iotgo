@@ -22,7 +22,7 @@ const defaultLogDirectory = "/var/log"
 const defaultLogFileName = "HomeEnvironment"
 const myName = "Environment Logger"
 const defaultLogInterval = 15 // minutes
-const defaultMqttBroker = "tcp://192.168.1.13:1883"
+const defaultMqttBroker = "tcp://DanielPi3:1883"
 
 type stateUpdateType struct {
 	name  string
@@ -68,7 +68,7 @@ func init() {
 		logDirectory = defaultLogDirectory
 	}
 
-	logFileName := os.Getenv("LOGNAME")
+	logFileName := os.Getenv("LOGFILENAME")
 	if len(logFileName) < 1 {
 		logFileName = defaultLogFileName
 	}
@@ -166,7 +166,7 @@ func heartbeat(con context.Context) context.Context {
  * It also uses contexts to generate a periodic heartbeat for dumping
  * sensor averages to the log.
  */
-func updater(con context.Context, client mqtt.Client) {
+func updater(con context.Context) {
 	timeoutContext := heartbeat(con)
 	dataLogger("logdaemon", "startup")
 
@@ -209,50 +209,38 @@ func updater(con context.Context, client mqtt.Client) {
 	}
 }
 
-func dataLogger(event, value string) {
-
-	f, err := os.OpenFile(fullLogFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		log.Printf("Logger: Cannot open for writing log file %s. err = %v", fullLogFileName, err)
-		return
-	}
-	defer f.Close()
-
-	formattedMsg := time.Now().Format("Mon Jan 2 15:04:05 2006") + ",  " + event + ", " + value + "\n"
-
-	_, err = f.WriteString(formattedMsg)
-	if err != nil {
-		log.Printf("Logger: Error writing to file %s.  err = %v\n", fullLogFileName, err)
-		return
-	}
-}
-
 func main() {
 
 	//mqtt.DEBUG = log.New(os.Stdout, "", 0)
+	logMessage("mqtt broker = " + mqttBroker)
 	mqtt.ERROR = log.New(os.Stdout, "", 0)
-	opts := mqtt.NewClientOptions().AddBroker(mqttBroker).SetClientID("automation-daemon")
+	opts := mqtt.NewClientOptions().AddBroker(mqttBroker).SetClientID("envlogger-daemon")
 	opts.SetKeepAlive(60 * time.Second)
 	opts.SetPingTimeout(1 * time.Second)
 
 	client := mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		logMessage(fmt.Sprintf("Client Connect Failed: %f", token.Error()))
 		panic(token.Error())
 	}
 	logMessage("environment data logger started")
 
 	// start up the data aggregator
-	go updater(context.Background(), client)
+	go updater(context.Background())
 
 	if token := client.Subscribe("environment/#", 0, handler); token.Wait() && token.Error() != nil {
-		fmt.Println(token.Error())
-		os.Exit(1)
+		logMessage(fmt.Sprintf("Client Subscribe Failed: %f", token.Error()))
+		panic(token.Error())
 	}
 
 	// sleep forever
 	for {
 		time.Sleep(1 * time.Second)
 	}
+}
+
+func dataLogger(event, value string) {
+	logMessage(", " + event + ", " + value)
 }
 
 func logMessage(m string) {
