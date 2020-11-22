@@ -22,6 +22,7 @@ const defaultLogDirectory = "/var/log"
 const defaultLogFileName = "HomeEnvironment"
 const myName = "Environment Logger"
 const defaultLogInterval = 15 // minutes
+const defaultMqttBroker = "tcp://192.168.1.13:1883"
 
 type stateUpdateType struct {
 	name  string
@@ -36,6 +37,7 @@ type valueUpdateType struct {
 var (
 	logDirectory    string
 	fullLogFileName string
+	mqttBroker      string
 	logInterval     time.Duration
 	updateChannel   chan interface{}
 )
@@ -83,6 +85,11 @@ func init() {
 		i = j
 	}
 	logInterval = time.Duration(i) * time.Minute
+
+	mqttBroker = os.Getenv("MQTTBROKER")
+	if len(mqttBroker) < 1 {
+		mqttBroker = defaultMqttBroker
+	}
 
 	updateChannel = make(chan interface{})
 	sensorData = make(map[string]sensorDataType)
@@ -149,7 +156,7 @@ func heartbeat(con context.Context) context.Context {
 	// Now, how many intervals since then
 	ni := time.Since(lastMidnight) / logInterval
 	// One more interval until the deadline
-	c, _ := context.WithDeadline(con, lastMidnight.Add((ni + 1) * logInterval))
+	c, _ := context.WithDeadline(con, lastMidnight.Add((ni+1)*logInterval))
 	return c
 }
 
@@ -161,6 +168,7 @@ func heartbeat(con context.Context) context.Context {
  */
 func updater(con context.Context, client mqtt.Client) {
 	timeoutContext := heartbeat(con)
+	dataLogger("logdaemon", "startup")
 
 	// Loop forever getting updates and heartbeats
 	for {
@@ -182,16 +190,16 @@ func updater(con context.Context, client mqtt.Client) {
 				s.numValues++
 				sensorData[update.name] = s
 			}
-		case <- timeoutContext.Done():
+		case <-timeoutContext.Done():
 			// reset the heartbeat context
 			timeoutContext = heartbeat(con)
 
 			// Loop over all known sensors, outputing stuff and zeroing out
-			for name, data := range(sensorData) {
+			for name, data := range sensorData {
 				if data.numValues <= 0 {
 					dataLogger(name, "no-data")
 				} else {
-					dataLogger(name, strconv.FormatFloat(data.sumValues, 'f', 1, 64))
+					dataLogger(name, strconv.FormatFloat(data.sumValues/float64(data.numValues), 'f', 1, 64))
 				}
 				data.numValues = 0
 				data.sumValues = 0.
@@ -201,11 +209,29 @@ func updater(con context.Context, client mqtt.Client) {
 	}
 }
 
+func dataLogger(event, value string) {
+
+	f, err := os.OpenFile(fullLogFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Printf("Logger: Cannot open for writing log file %s. err = %v", fullLogFileName, err)
+		return
+	}
+	defer f.Close()
+
+	formattedMsg := time.Now().Format("Mon Jan 2 15:04:05 2006") + ",  " + event + ", " + value + "\n"
+
+	_, err = f.WriteString(formattedMsg)
+	if err != nil {
+		log.Printf("Logger: Error writing to file %s.  err = %v\n", fullLogFileName, err)
+		return
+	}
+}
+
 func main() {
 
 	//mqtt.DEBUG = log.New(os.Stdout, "", 0)
 	mqtt.ERROR = log.New(os.Stdout, "", 0)
-	opts := mqtt.NewClientOptions().AddBroker("tcp://127.0.0.1:1883").SetClientID("automation-daemon")
+	opts := mqtt.NewClientOptions().AddBroker(mqttBroker).SetClientID("automation-daemon")
 	opts.SetKeepAlive(60 * time.Second)
 	opts.SetPingTimeout(1 * time.Second)
 
@@ -214,6 +240,9 @@ func main() {
 		panic(token.Error())
 	}
 	logMessage("environment data logger started")
+
+	// start up the data aggregator
+	go updater(context.Background(), client)
 
 	if token := client.Subscribe("environment/#", 0, handler); token.Wait() && token.Error() != nil {
 		fmt.Println(token.Error())
