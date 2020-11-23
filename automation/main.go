@@ -96,8 +96,9 @@ func init() {
 	fullLogFileName = filepath.Join(logDirectory, logFileName)
 
 	// set the time to a long time ago.
-	for _, s := range sensorStates {
+	for k, s := range sensorStates {
 		s.updateTime, _ = time.Parse("2006-Jan-02 MST", "2000-Jan-01 EST")
+		sensorStates[k] = s
 	}
 
 	epoch, _ = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
@@ -228,11 +229,6 @@ var r45handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) 
 
 	topicComponents := strings.Split(topic, "/")
 	sensor := topicComponents[2]
-
-	// Give up if we don't know this sensor
-	if _, ok := sensorStates[sensor]; !ok {
-		return
-	}
 
 	switch topicComponents[3] {
 	case sensor:
