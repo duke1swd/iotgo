@@ -193,7 +193,6 @@ var r23handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) 
 
 	payload := string(msg.Payload())
 	ledValue, ok := alarmStates[payload]
-	log.Printf("r23 payload = %s\n", payload)
 	if !ok {
 		logMessage("Invalid environment alarm state: " + payload)
 		return
