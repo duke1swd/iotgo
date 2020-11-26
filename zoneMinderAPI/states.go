@@ -37,7 +37,7 @@ func GetState(state string) map[string]interface{} {
 			"token": Token,
 		}).
 		SetResult(&res).
-		Get("http://192.168.1.99:108/zm/api/states/foo.json")
+		Get("http://192.168.1.99:108/zm/api/states/view/" + state + ".json")
 
 	if err != nil || res == nil {
 		fmt.Println("Cannot view state")

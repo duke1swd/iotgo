@@ -17,11 +17,13 @@ func TestListConfigs(t *testing.T) {
 }
 
 func TestGetStates(t *testing.T) {
-	_ = GetStates()
+	response := GetStates()
+	states := response["states"]
+	fmt.Println(states)
 }
 
 func TestGetState(t *testing.T) {
-	s := GetState("default")
+	s := GetState("Home")
 
 	fmt.Println(s)
 }
