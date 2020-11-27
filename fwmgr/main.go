@@ -174,6 +174,9 @@ func deviceInfo(device string) {
 			fmt.Printf("\tFW %s: %s\n", field, v)
 		}
 	}
+	if v, ok := dmap["$state"]; ok {
+		fmt.Printf("\tState: %s\n", v)
+	}
 }
 
 func fileDigest(file string) string {
