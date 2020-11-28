@@ -34,6 +34,13 @@
 		Supress publication whenever the "time-last-update" is more than 3 minutes old.
 		If the data is more than 10 minutes old, publish "unknown" as the temp value
 
+ *	R6: Generate a usable value for how light it is outside.  0=dark, 7=bright.
+ 		Create this value by averaging lux for 5 minutes, then converting.
+		Subscribe to:
+			environment/outdoor-lux
+			(not really, just uses value computed here)
+		Publish to:
+			environment/outdoor-light
  *
 */
 
@@ -63,6 +70,8 @@ var (
 	epoch           time.Time
 	updateChan      chan interface{}
 	sensorExpire    time.Duration
+	sumLux          float64
+	nLux            int
 )
 
 type sensorStateType struct {
@@ -105,6 +114,9 @@ func init() {
 
 	sensorExpire, _ = time.ParseDuration("120s") // sensor data invalide if not refreshed every minute or so
 	updateChan = make(chan interface{})
+
+	sumLux = 0
+	nLux = 0
 }
 
 /*
@@ -250,6 +262,34 @@ var r45handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) 
 }
 
 /*
+ * Convert a lux value into a "light" value.
+ * Conversion is by the table seen here
+ */
+ type luxLightType struct {
+	 maxLux int
+	 light int
+ }
+
+ var luxConversion []luxLightType = []luxLightType{
+	 { 2, 0 },
+	 { 100 * 1, 1},		//  100
+	 { 100 * 2, 2},		//  200
+	 { 100 * 4, 3},		//  400
+	 { 100 * 8, 4},		//  800
+	 { 100 * 16, 5},	// 1600
+	 { 100 * 32, 6},	// 3200
+ }
+
+ func luxToLight(lux float64) int64 {
+	 for _, c := range(luxConversion) {
+		 if lux <= float64(c.maxLux) {
+			 return int64(c.light)
+		 }
+	 }
+	 return int64(len(luxConversion))
+ }
+
+/*
  * This function is a go routine that serializes updates to the sensorStates map.
  * It also implements a periodic timeout looking for sensors that have not updated in a while.
  */
@@ -258,6 +298,8 @@ func sensorUpdateHandler(con context.Context, client mqtt.Client) {
 	// every so often wake up whether we've recieved any thing to do or not.
 	timeoutDuration, _ := time.ParseDuration("1m")
 	timeoutContext, _ := context.WithTimeout(con, timeoutDuration)
+	averageDuration, _ := time.ParseDuration("5m")
+	averageContext, _ := context.WithTimeout(con, averageDuration)
 	for {
 		select {
 		case data := <-updateChan:
@@ -269,6 +311,12 @@ func sensorUpdateHandler(con context.Context, client mqtt.Client) {
 				sensorStates[update.name] = s
 				payload := strconv.FormatFloat(update.value, 'f', 1, 64)
 				client.Publish("environment/outdoor-"+update.name, 0, true, payload)
+				// Rule 6, compute average LUX
+				if update.name == "lux" {
+					nLux++
+					sumLux += update.value
+				}
+
 			case sensorUpdateTimeType:
 				s := sensorStates[update.name]
 				s.updateTime = update.updateTime
@@ -286,6 +334,15 @@ func sensorUpdateHandler(con context.Context, client mqtt.Client) {
 				}
 			}
 			timeoutContext, _ = context.WithTimeout(con, timeoutDuration)
+		case <-averageContext.Done():
+			if nLux > 0 {
+				averageLight := luxToLight(sumLux / float64(nLux))
+				client.Publish("environment/outdoor-light", 0, true,
+					strconv.FormatInt(averageLight, 10))
+				averageContext, _ = context.WithTimeout(con, averageDuration)
+				nLux = 0
+				sumLux = 0
+			}
 		}
 	}
 }
