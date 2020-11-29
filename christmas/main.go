@@ -35,6 +35,11 @@ type deviceType struct {
 	button string
 }
 
+type publishType struct {
+	topic   string
+	payload string
+}
+
 var (
 	client          mqtt.Client
 	logDirectory    string
@@ -43,6 +48,7 @@ var (
 	epoch           time.Time
 	updateChan      chan updateType
 	deviceBackChan  chan string
+	publishChan     chan publishType
 	seasonStart     time.Time
 	seasonEnd       time.Time
 	globalEnable    bool
@@ -85,7 +91,8 @@ func init() {
 	seasonEnd, _ = time.Parse("2006-Jan-02 MST", "2100-Jan-06 EDT")
 
 	updateChan = make(chan updateType)
-	deviceBackChan = make(chan string)
+	deviceBackChan = make(chan string, 100)
+	publishChan = make(chan publishType, 100)
 	regionMap = make(map[string]map[string]string)
 	deviceMap = make(map[string]deviceType)
 	lightLevel = 0
@@ -186,7 +193,8 @@ var deviceHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Messag
 	payload := string(msg.Payload())
 	topic := string(msg.Topic())
 
-	if debug {
+	// surpress '$' topics, as they are uninteresting in this context
+	if debug && strings.Index(topic, "$") < 0 {
 		fmt.Printf("device message: %s %s\n", topic, payload)
 	}
 
@@ -199,13 +207,12 @@ var deviceHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Messag
 	update.value1 = device
 	update.value2 = payload
 
-	if topicComponents[2] == "outlet" && topicComponents[3] == "on" {
+	if topicComponents[2] == "outlet" && topicComponents[3] == "on" && len(topicComponents) == 4 {
 		update.update = "outlet"
 		updateChan <- update
 	}
 
 	if topicComponents[2] == "button" && topicComponents[3] == "button" {
-		var update updateType
 		update.update = "button"
 		updateChan <- update
 	}
@@ -214,7 +221,7 @@ var deviceHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Messag
 /*
  * All action requests come here and are serialized that way
  */
-func updater(con context.Context, client mqtt.Client) {
+func updater(con context.Context) {
 	if debug {
 		fmt.Println("Updater running")
 	}
@@ -263,6 +270,9 @@ func updater(con context.Context, client mqtt.Client) {
 				if ok {
 					device.button = update.value2
 					deviceMap[update.value1] = device
+					if debug {
+						fmt.Printf("\tSet device %s button to %s\n", update.value1, device.button)
+					}
 				}
 			}
 			timeoutContext, _ = context.WithTimeout(con, timeoutDuration)
@@ -335,11 +345,13 @@ func stateMachine(client mqtt.Client) {
 	// First, acknowledge button pushes
 	for deviceName, device := range deviceMap {
 		if device.button == "true" {
-			topic := fmt.Sprintf("devices/%s/button/button/set", deviceName)
-			client.Publish(topic, 0, true, "false")
 			if verboseLog {
 				logMessage(fmt.Sprintf("button on device %s pushed", deviceName))
 			}
+			var p publishType
+			p.topic = fmt.Sprintf("devices/%s/button/button/set", deviceName)
+			p.payload = "false"
+			publishChan <- p
 		}
 	}
 
@@ -443,8 +455,10 @@ func stateMachine(client mqtt.Client) {
 			}
 			// don't need to update the region map, as we'll recieve the message we are about to publish
 
-			topic := fmt.Sprintf("christmas/%s/state", regionName)
-			client.Publish(topic, 0, true, state)
+			var p publishType
+			p.topic = fmt.Sprintf("christmas/%s/state", regionName)
+			p.payload = state
+			publishChan <- p
 			if verboseLog {
 				logMessage(fmt.Sprintf("state in region %s set to %s", regionName, state))
 			}
@@ -454,15 +468,18 @@ func stateMachine(client mqtt.Client) {
 		// and set the device if necessary
 		for deviceName, device := range deviceMap {
 			if device.region == regionName {
-				topic := fmt.Sprintf("devices/%s/outlet/on/set", deviceName)
+				var p publishType
+				p.topic = fmt.Sprintf("devices/%s/outlet/on/set", deviceName)
 				if device.outlet == "true" && !shouldBeOn {
-					client.Publish(topic, 0, true, "false")
+					p.payload = "false"
+					publishChan <- p
 					if verboseLog {
 						logMessage(fmt.Sprintf("device %s in region %s set to off", deviceName, regionName))
 					}
 				}
 				if device.outlet == "false" && shouldBeOn {
-					client.Publish(topic, 0, true, "true")
+					p.payload = "true"
+					publishChan <- p
 					if verboseLog {
 						logMessage(fmt.Sprintf("device %s in region %s set to on", deviceName, regionName))
 					}
@@ -475,7 +492,7 @@ func stateMachine(client mqtt.Client) {
 func main() {
 
 	modeConfig = true
-	go updater(context.Background(), client)
+	go updater(context.Background())
 
 	//mqtt.DEBUG = log.New(os.Stdout, "", 0)
 	logMessage("Christmas Daemon started")
@@ -503,14 +520,21 @@ func main() {
 	time.Sleep(1 * time.Second)
 	modeConfig = false
 
-	// sleep forever, processing new device subscriptions if they should happen
+	// sleep forever, processing requests for mqtt work
 	for {
-		deviceName := <-deviceBackChan
-		sub := "devices/" + deviceName + "/#"
-		if token := client.Subscribe(sub, 0, deviceHandler); token.Wait() && token.Error() != nil {
-			logMessage(fmt.Sprintf("Failed to subscribe to %s.  Err=%v", sub, token.Error()))
-		} else if verboseLog {
-			logMessage(fmt.Sprintf("Subscribed to %s", sub))
+		select {
+		case deviceName := <-deviceBackChan:
+			sub := "devices/" + deviceName + "/#"
+			if token := client.Subscribe(sub, 0, deviceHandler); token.Wait() && token.Error() != nil {
+				logMessage(fmt.Sprintf("Failed to subscribe to %s.  Err=%v", sub, token.Error()))
+			} else if verboseLog {
+				logMessage(fmt.Sprintf("Subscribed to %s", sub))
+			}
+		case pubRequest := <-publishChan:
+			if debug {
+				fmt.Println("Publishing ", pubRequest.topic, " : ", pubRequest.payload)
+			}
+			client.Publish(pubRequest.topic, 0, true, pubRequest.payload)
 		}
 	}
 }
