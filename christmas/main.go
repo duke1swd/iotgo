@@ -42,6 +42,7 @@ var (
 	fullLogFileName string
 	epoch           time.Time
 	updateChan      chan updateType
+	deviceBackChan  chan string
 	seasonStart     time.Time
 	seasonEnd       time.Time
 	globalEnable    bool
@@ -84,6 +85,7 @@ func init() {
 	seasonEnd, _ = time.Parse("2006-Jan-02 MST", "2100-Jan-06 EDT")
 
 	updateChan = make(chan updateType)
+	deviceBackChan = make(chan string)
 	regionMap = make(map[string]map[string]string)
 	deviceMap = make(map[string]deviceType)
 	lightLevel = 0
@@ -95,6 +97,10 @@ var christmasHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mes
 	payload := string(msg.Payload())
 	topic := string(msg.Topic())
 	topicComponents := strings.Split(topic, "/")
+
+	if debug {
+		fmt.Printf("christmas message: %s %s\n", topic, payload)
+	}
 
 	switch topicComponents[1] {
 	case "season":
@@ -155,13 +161,6 @@ var christmasHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mes
 				update.update = "device"
 				update.value1 = device
 				updateChan <- update
-
-				sub := "devices/" + device + "/#"
-				if token := client.Subscribe(sub, 0, deviceHandler); token.Wait() && token.Error() != nil {
-					logMessage(fmt.Sprintf("Failed to subscribe to %s.  Err=%v", sub, token.Error()))
-				} else if verboseLog {
-					logMessage(fmt.Sprintf("Subscribed to %s", sub))
-				}
 			}
 		}
 	}
@@ -170,6 +169,10 @@ var christmasHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mes
 // All mqtt messages about light level are handled here
 var lightHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 	payload := string(msg.Payload())
+
+	if debug {
+		fmt.Printf("light message: %s\n", payload)
+	}
 
 	var update updateType
 	update.update = "light"
@@ -182,6 +185,10 @@ var deviceHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Messag
 	var update updateType
 	payload := string(msg.Payload())
 	topic := string(msg.Topic())
+
+	if debug {
+		fmt.Printf("device message: %s %s\n", topic, payload)
+	}
 
 	topicComponents := strings.Split(topic, "/")
 	if len(topicComponents) < 4 {
@@ -208,6 +215,9 @@ var deviceHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Messag
  * All action requests come here and are serialized that way
  */
 func updater(con context.Context, client mqtt.Client) {
+	if debug {
+		fmt.Println("Updater running")
+	}
 
 	// every so often wake up whether we've recieved any thing to do or not.
 	timeoutDuration, _ := time.ParseDuration("1m")
@@ -215,6 +225,9 @@ func updater(con context.Context, client mqtt.Client) {
 	for {
 		select {
 		case update := <-updateChan:
+			if debug {
+				fmt.Printf("Update recieved: %s\n", update.update)
+			}
 			switch update.update {
 			case "region":
 				region, ok := regionMap[update.region]
@@ -237,6 +250,8 @@ func updater(con context.Context, client mqtt.Client) {
 					device.outlet = "false"
 				}
 				deviceMap[update.value1] = device
+				deviceBackChan <- update.value1 // tell main thread to subscribe
+
 			case "outlet":
 				device, ok := deviceMap[update.value1]
 				if ok {
@@ -253,6 +268,9 @@ func updater(con context.Context, client mqtt.Client) {
 			timeoutContext, _ = context.WithTimeout(con, timeoutDuration)
 			stateMachine(client)
 		case <-timeoutContext.Done():
+			if debug {
+				fmt.Println("Updater timeout")
+			}
 			timeoutContext, _ = context.WithTimeout(con, timeoutDuration)
 			stateMachine(client)
 		}
@@ -456,6 +474,9 @@ func stateMachine(client mqtt.Client) {
 
 func main() {
 
+	modeConfig = true
+	go updater(context.Background(), client)
+
 	//mqtt.DEBUG = log.New(os.Stdout, "", 0)
 	logMessage("Christmas Daemon started")
 	logMessage("mqtt broker = " + mqttBroker)
@@ -469,8 +490,6 @@ func main() {
 		panic(token.Error())
 	}
 
-	logMessage("Christmas daemon started")
-
 	if token := client.Subscribe("christmas/#", 0, christmasHandler); token.Wait() && token.Error() != nil {
 		fmt.Println(token.Error())
 		os.Exit(1)
@@ -481,18 +500,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	modeConfig = true
-	go updater(context.Background(), client)
 	time.Sleep(1 * time.Second)
 	modeConfig = false
 
-	// sleep forever
+	// sleep forever, processing new device subscriptions if they should happen
 	for {
-		time.Sleep(1 * time.Second)
+		deviceName := <-deviceBackChan
+		sub := "devices/" + deviceName + "/#"
+		if token := client.Subscribe(sub, 0, deviceHandler); token.Wait() && token.Error() != nil {
+			logMessage(fmt.Sprintf("Failed to subscribe to %s.  Err=%v", sub, token.Error()))
+		} else if verboseLog {
+			logMessage(fmt.Sprintf("Subscribed to %s", sub))
+		}
 	}
 }
 
 func logMessage(m string) {
+	formattedMsg := time.Now().Format("Mon Jan 2 15:04:05 2006") + "  " + m + "\n"
+
+	// if debugging just send to stdout
+	if debug {
+		fmt.Print(formattedMsg)
+		return
+	}
+
 	f, err := os.OpenFile(fullLogFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		log.Printf("Logger: Cannot open for writing log file %s. err = %v", fullLogFileName, err)
@@ -500,16 +531,9 @@ func logMessage(m string) {
 	}
 	defer f.Close()
 
-	formattedMsg := time.Now().Format("Mon Jan 2 15:04:05 2006") + "  " + m + "\n"
-
-	// if debugging just send to stdout
-	if debug {
-		fmt.Print(formattedMsg)
-	} else {
-		_, err = f.WriteString(formattedMsg)
-		if err != nil {
-			log.Printf("Logger: Error writing to file %s.  err = %v\n", fullLogFileName, err)
-			return
-		}
+	_, err = f.WriteString(formattedMsg)
+	if err != nil {
+		log.Printf("Logger: Error writing to file %s.  err = %v\n", fullLogFileName, err)
+		return
 	}
 }
