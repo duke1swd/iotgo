@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -49,6 +50,7 @@ var (
 	deviceMap       map[string]deviceType // map a device name to its region
 	modeConfig      bool
 	lightLevel      int
+	debug           bool
 )
 
 func init() {
@@ -70,6 +72,12 @@ func init() {
 	}
 
 	_, verboseLog = os.LookupEnv("VERBOSE_LOG")
+
+	flag.BoolVar(&debug, "D", false, "debugging")
+	flag.Parse()
+	if debug {
+		verboseLog = true
+	}
 
 	epoch, _ = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
 	seasonStart, _ = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
@@ -211,7 +219,7 @@ func updater(con context.Context, client mqtt.Client) {
 			case "region":
 				region, ok := regionMap[update.region]
 				if !ok {
-					region := make(map[string]string)
+					region = make(map[string]string)
 				}
 				region[update.value1] = update.value2
 				regionMap[update.region] = region
@@ -251,6 +259,48 @@ func updater(con context.Context, client mqtt.Client) {
 	}
 }
 
+// parse "hh:mm" spec
+func parsehhmm(hhmm string, defaultHour int) (int, int) {
+	if debug {
+		fmt.Println("\t\t\tParsing: " + hhmm)
+	}
+	hc := strings.Split(hhmm, ":")
+	if len(hc) != 2 {
+		return defaultHour, 0
+	}
+
+	hour, err := strconv.ParseInt(hc[0], 10, 32)
+	if err != nil {
+		return defaultHour, 0
+	}
+
+	min, err := strconv.ParseInt(hc[1], 10, 32)
+	if err != nil {
+		return defaultHour, 0
+	}
+
+	if hour < 0 || hour > 23 || min < 0 || min > 59 {
+		return defaultHour, 0
+	}
+
+	return int(hour), int(min)
+}
+
+// takes a specification in the form of "hh:mm" and decides when that is
+func hhmmWindow(now time.Time, spec string, defaultHour int) time.Time {
+	hour, minute := parsehhmm(spec, defaultHour)
+
+	// times before noon are assumed to be tomorrow
+	if hour < 12 {
+		hour += 24
+	}
+
+	loc, _ := time.LoadLocation("Local")
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+
+	return dayStart.Add(time.Duration(hour) * time.Hour).Add(time.Duration(minute) * time.Minute)
+}
+
 /*
    This routine gets called from time to time when the state of
    the world may have changed.  Its job is to evaluate the world,
@@ -261,8 +311,11 @@ func updater(con context.Context, client mqtt.Client) {
    safe for it to access the deviceMap and the regionMap.
 */
 func stateMachine(client mqtt.Client) {
+	if debug {
+		fmt.Println("State Machine Running")
+	}
 	// First, acknowledge button pushes
-	for deviceName, device := range(deviceMap) {
+	for deviceName, device := range deviceMap {
 		if device.button == "true" {
 			topic := fmt.Sprintf("devices/%s/button/button/set", deviceName)
 			client.Publish(topic, 0, true, "false")
@@ -270,6 +323,11 @@ func stateMachine(client mqtt.Client) {
 				logMessage(fmt.Sprintf("button on device %s pushed", deviceName))
 			}
 		}
+	}
+
+	// don't run the state machine until the state is fully loaded
+	if modeConfig {
+		return
 	}
 
 	// Is Chistmas enabled?
@@ -283,12 +341,22 @@ func stateMachine(client mqtt.Client) {
 		return
 	}
 
+	if debug {
+		fmt.Println("\tEnabled and in season")
+		fmt.Println("\tLight level is", lightLevel)
+	}
+
 	// For each region
-	for regionName, region := range(regionMap) {
+	for regionName, region := range regionMap {
 		// Are we in the window when the lights should be on?
 		var start, end bool
-		start= false
-		end= false
+		start = false
+		end = false
+
+		if debug {
+			fmt.Println("\tRegion: ", regionName)
+		}
+
 		startString := region["window-start"]
 		if startString == "light" {
 			start = lightLevel < 2 && now.Hour() >= 12
@@ -298,9 +366,12 @@ func stateMachine(client mqtt.Client) {
 		end = now.Before(hhmmWindow(now, region["window-end"], 11+12))
 
 		inWindow := start && end
+		if debug {
+			fmt.Println("\t\tIn window:", inWindow)
+		}
 
 		// handle button pushes and automatic vs manual states
-		for deviceName, device := range(deviceMap) {
+		for deviceName, device := range deviceMap {
 			if device.region == regionName && device.button == "true" {
 				device.button = "false"
 				deviceMap[deviceName] = device
@@ -317,6 +388,10 @@ func stateMachine(client mqtt.Client) {
 					}
 				}
 				regionMap[regionName] = region
+
+				if debug {
+					fmt.Printf("\t\t%s[\"control\"] set to %s\n", regionName, region["control"])
+				}
 			}
 		}
 
@@ -339,14 +414,20 @@ func stateMachine(client mqtt.Client) {
 
 		// for each device, check whether its state matches the desired state
 		// and set the device if necessary
-		for deviceName, device := range(deviceMap) {
+		for deviceName, device := range deviceMap {
 			if device.region == regionName {
 				topic := fmt.Sprintf("devices/%s/outlet/on/set", deviceName)
 				if device.outlet == "true" && !shouldBeOn {
 					client.Publish(topic, 0, true, "false")
+					if verboseLog {
+						logMessage(fmt.Sprintf("device %s in region %s set to off", deviceName, regionName))
+					}
 				}
 				if device.outlet == "false" && shouldBeOn {
 					client.Publish(topic, 0, true, "true")
+					if verboseLog {
+						logMessage(fmt.Sprintf("device %s in region %s set to on", deviceName, regionName))
+					}
 				}
 			}
 		}
@@ -401,9 +482,14 @@ func logMessage(m string) {
 
 	formattedMsg := time.Now().Format("Mon Jan 2 15:04:05 2006") + "  " + m + "\n"
 
-	_, err = f.WriteString(formattedMsg)
-	if err != nil {
-		log.Printf("Logger: Error writing to file %s.  err = %v\n", fullLogFileName, err)
-		return
+	// if debugging just send to stdout
+	if debug {
+		fmt.Print(formattedMsg)
+	} else {
+		_, err = f.WriteString(formattedMsg)
+		if err != nil {
+			log.Printf("Logger: Error writing to file %s.  err = %v\n", fullLogFileName, err)
+			return
+		}
 	}
 }
