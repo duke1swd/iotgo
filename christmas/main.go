@@ -41,23 +41,23 @@ type publishType struct {
 }
 
 var (
-	client          mqtt.Client
-	logDirectory    string
-	mqttBroker      string
-	fullLogFileName string
-	epoch           time.Time
-	updateChan      chan updateType
-	deviceBackChan  chan string
-	publishChan     chan publishType
-	seasonStart     time.Time
-	seasonEnd       time.Time
-	globalEnable    bool
-	verboseLog      bool
-	regionMap       map[string]map[string]string // map region to a set of devices
-	deviceMap       map[string]deviceType        // map a device name to its region
-	modeConfig      bool
-	lightLevel      int
-	debug           bool
+	client            mqtt.Client
+	logDirectory      string
+	mqttBroker        string
+	fullLogFileName   string
+	updateChan        chan updateType
+	deviceBackChan    chan string
+	publishChan       chan publishType
+	seasonStart       time.Time
+	seasonEnd         time.Time
+	globalEnable      bool
+	verboseLog        bool
+	regionMap         map[string]map[string]string // map region to a set of devices
+	deviceMap         map[string]deviceType        // map a device name to its region
+	lightLevel        int
+	debug             bool
+	lastPublish       time.Time
+	stateMachineDefer time.Duration
 )
 
 func init() {
@@ -86,9 +86,9 @@ func init() {
 		verboseLog = true
 	}
 
-	epoch, _ = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
 	seasonStart, _ = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
 	seasonEnd, _ = time.Parse("2006-Jan-02 MST", "2100-Jan-06 EDT")
+	lastPublish = time.Now()
 
 	updateChan = make(chan updateType)
 	deviceBackChan = make(chan string, 100)
@@ -97,6 +97,7 @@ func init() {
 	deviceMap = make(map[string]deviceType)
 	lightLevel = 0
 	globalEnable = false
+	stateMachineDefer = time.Duration(2) * time.Second
 }
 
 // All mqtt messages about christmas are handled here
@@ -360,11 +361,6 @@ func stateMachine(client mqtt.Client) {
 		}
 	}
 
-	// don't run the state machine until the state is fully loaded
-	if modeConfig {
-		return
-	}
-
 	// Is Chistmas enabled?
 	if !globalEnable {
 		return
@@ -373,6 +369,11 @@ func stateMachine(client mqtt.Client) {
 	// Are we in the season?
 	now := time.Now()
 	if now.Before(seasonStart) || now.After(seasonEnd) {
+		return
+	}
+
+	// If we've just published some stuff then don't run the state machine
+	if time.Since(lastPublish) < stateMachineDefer {
 		return
 	}
 
@@ -494,7 +495,6 @@ func stateMachine(client mqtt.Client) {
 
 func main() {
 
-	modeConfig = true
 	go updater(context.Background())
 
 	//mqtt.DEBUG = log.New(os.Stdout, "", 0)
@@ -520,9 +520,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	time.Sleep(1 * time.Second)
-	modeConfig = false
-
 	// sleep forever, processing requests for mqtt work
 	for {
 		select {
@@ -537,6 +534,7 @@ func main() {
 			if debug {
 				fmt.Println("Publishing ", pubRequest.topic, " : ", pubRequest.payload)
 			}
+			lastPublish = time.Now()
 			client.Publish(pubRequest.topic, 0, true, pubRequest.payload)
 		}
 	}
