@@ -395,7 +395,7 @@ func stateMachine(client mqtt.Client) {
 
 		startString := region["window-start"]
 		if startString == "light" {
-			start = lightLevel < 2 && now.Hour() >= 12
+			start = lightLevel < 4 && now.Hour() >= 12
 		} else {
 			start = now.After(hhmmWindow(now, startString, 17))
 		}
