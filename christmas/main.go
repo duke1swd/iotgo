@@ -210,11 +210,16 @@ var deviceHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Messag
 	if topicComponents[2] == "outlet" && topicComponents[3] == "on" && len(topicComponents) == 4 {
 		update.update = "outlet"
 		updateChan <- update
+		return
 	}
 
 	if topicComponents[2] == "button" && topicComponents[3] == "button" && len(topicComponents) == 4 {
 		update.update = "button"
 		updateChan <- update
+		return
+	}
+	if debug {
+		fmt.Println("\tmessage discarded")
 	}
 }
 
