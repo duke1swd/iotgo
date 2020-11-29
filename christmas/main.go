@@ -412,6 +412,26 @@ func stateMachine(client mqtt.Client) {
 			shouldBeOn = !shouldBeOn
 		}
 
+		if debug {
+			fmt.Println("\t\tlights should be on:", shouldBeOn)
+		}
+
+		// Now, see if this matches the public state
+		state, ok := region["state"]
+		if !ok || shouldBeOn && state != "on" || !shouldBeOn && state == "on" {
+			state = "off"
+			if shouldBeOn {
+				state = "on"
+			}
+			// don't need to update the region map, as we'll recieve the message we are about to publish
+
+			topic := fmt.Sprintf("christmas/%s/state", regionName)
+			client.Publish(topic, 0, true, state)
+			if verboseLog {
+				logMessage(fmt.Sprintf("state in region %s set to %s", regionName, state))
+			}
+		}
+
 		// for each device, check whether its state matches the desired state
 		// and set the device if necessary
 		for deviceName, device := range deviceMap {
