@@ -53,8 +53,8 @@ var (
 	seasonEnd       time.Time
 	globalEnable    bool
 	verboseLog      bool
-	regionMap       map[string]map[string]string
-	deviceMap       map[string]deviceType // map a device name to its region
+	regionMap       map[string]map[string]string // map region to a set of devices
+	deviceMap       map[string]deviceType        // map a device name to its region
 	modeConfig      bool
 	lightLevel      int
 	debug           bool
@@ -146,14 +146,10 @@ var christmasHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mes
 		switch payload {
 		case "true":
 			globalEnable = true
-			if verboseLog {
-				logMessage("Christmas control enabled")
-			}
+			logMessage("Christmas control enabled")
 		case "false":
 			globalEnable = false
-			if verboseLog {
-				logMessage("Christmas control disabled")
-			}
+			logMessage("Christmas control disabled")
 		}
 	default:
 		var update updateType
@@ -194,7 +190,11 @@ var deviceHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Messag
 	topic := string(msg.Topic())
 
 	// surpress '$' topics, as they are uninteresting in this context
-	if debug && strings.Index(topic, "$") < 0 {
+	if strings.Index(topic, "$") >= 0 {
+		return
+	}
+
+	if debug {
 		fmt.Printf("device message: %s %s\n", topic, payload)
 	}
 
@@ -212,7 +212,7 @@ var deviceHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Messag
 		updateChan <- update
 	}
 
-	if topicComponents[2] == "button" && topicComponents[3] == "button" {
+	if topicComponents[2] == "button" && topicComponents[3] == "button" && len(topicComponents) == 4 {
 		update.update = "button"
 		updateChan <- update
 	}
@@ -459,9 +459,7 @@ func stateMachine(client mqtt.Client) {
 			p.topic = fmt.Sprintf("christmas/%s/state", regionName)
 			p.payload = state
 			publishChan <- p
-			if verboseLog {
-				logMessage(fmt.Sprintf("state in region %s set to %s", regionName, state))
-			}
+			logMessage(fmt.Sprintf("state in region %s set to %s", regionName, state))
 		}
 
 		// for each device, check whether its state matches the desired state
