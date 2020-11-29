@@ -242,10 +242,113 @@ func updater(con context.Context, client mqtt.Client) {
 					deviceMap[update.value1] = device
 				}
 			}
-			stateMachine()
-		case <-timeoutContext.Done():
-			stateMachine()
 			timeoutContext, _ = context.WithTimeout(con, timeoutDuration)
+			stateMachine(client)
+		case <-timeoutContext.Done():
+			timeoutContext, _ = context.WithTimeout(con, timeoutDuration)
+			stateMachine(client)
+		}
+	}
+}
+
+/*
+   This routine gets called from time to time when the state of
+   the world may have changed.  Its job is to evaluate the world,
+   turning lights on and off when required.  It also acknowledges
+   the button pushes on the devices.
+
+   This routine is called from the updater go routine.  It is
+   safe for it to access the deviceMap and the regionMap.
+*/
+func stateMachine(client mqtt.Client) {
+	// First, acknowledge button pushes
+	for deviceName, device := range(deviceMap) {
+		if device.button == "true" {
+			topic := fmt.Sprintf("devices/%s/button/button/set", deviceName)
+			client.Publish(topic, 0, true, "false")
+			if verboseLog {
+				logMessage(fmt.Sprintf("button on device %s pushed", deviceName))
+			}
+		}
+	}
+
+	// Is Chistmas enabled?
+	if !globalEnable {
+		return
+	}
+
+	// Are we in the season?
+	now := time.Now()
+	if now.Before(seasonStart) || now.After(seasonEnd) {
+		return
+	}
+
+	// For each region
+	for regionName, region := range(regionMap) {
+		// Are we in the window when the lights should be on?
+		var start, end bool
+		start= false
+		end= false
+		startString := region["window-start"]
+		if startString == "light" {
+			start = lightLevel < 2 && now.Hour() >= 12
+		} else {
+			start = now.After(hhmmWindow(now, startString, 17))
+		}
+		end = now.Before(hhmmWindow(now, region["window-end"], 11+12))
+
+		inWindow := start && end
+
+		// handle button pushes and automatic vs manual states
+		for deviceName, device := range(deviceMap) {
+			if device.region == regionName && device.button == "true" {
+				device.button = "false"
+				deviceMap[deviceName] = device
+				switch region["control"] {
+				case "manual-i":
+					region["control"] = "auto"
+				case "manual-o":
+					region["control"] = "auto"
+				case "auto":
+					if inWindow {
+						region["control"] = "manual-i"
+					} else {
+						region["control"] = "manual-o"
+					}
+				}
+				regionMap[regionName] = region
+			}
+		}
+
+		// If manual control has expired, return to automatic control
+		if inWindow && region["control"] == "manual-o" {
+			region["control"] = "auto"
+			regionMap[regionName] = region
+		}
+
+		if !inWindow && region["control"] == "manual-i" {
+			region["control"] = "auto"
+			regionMap[regionName] = region
+		}
+
+		// Calculate whether the lights in this region should be on.
+		shouldBeOn := inWindow
+		if region["control"] == "manual-i" || region["control"] == "manual-o" {
+			shouldBeOn = !shouldBeOn
+		}
+
+		// for each device, check whether its state matches the desired state
+		// and set the device if necessary
+		for deviceName, device := range(deviceMap) {
+			if device.region == regionName {
+				topic := fmt.Sprintf("devices/%s/outlet/on/set", deviceName)
+				if device.outlet == "true" && !shouldBeOn {
+					client.Publish(topic, 0, true, "false")
+				}
+				if device.outlet == "false" && shouldBeOn {
+					client.Publish(topic, 0, true, "true")
+				}
+			}
 		}
 	}
 }
