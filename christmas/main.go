@@ -5,7 +5,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -21,6 +20,7 @@ import (
 const defaultLogDirectory = "/var/log"
 const defaultLogFileName = "HomeChristmas"
 const defaultMqttBroker = "tcp://localhost:1883"
+const defaultStateMachineTicker = 10 // number of seconds between pokes of the state machine.
 
 type updateType struct {
 	update string
@@ -264,14 +264,15 @@ func updateDevices(region, devices string) {
 /*
  * All action requests come here and are serialized that way
  */
-func updater(con context.Context) {
+func updater() {
 	if debug {
 		fmt.Println("Updater running")
 	}
 
-	// every so often wake up whether we've recieved any thing to do or not.
-	timeoutDuration, _ := time.ParseDuration("30s")
-	timeoutContext, _ := context.WithTimeout(con, timeoutDuration)
+	tickerDuration := time.Duration(defaultStateMachineTicker) * time.Second
+	ticker := time.NewTicker(tickerDuration)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case update := <-updateChan:
@@ -318,15 +319,13 @@ func updater(con context.Context) {
 					}
 				}
 			}
-			timeoutContext, _ = context.WithTimeout(con, timeoutDuration)
-			stateMachine(client)
-		case <-timeoutContext.Done():
+			//ticker.Reset(tickerDuration)	// the docs say this method exists, but it doesn't?
+		case _ = <-ticker.C:
 			if debug {
 				fmt.Println("Updater timeout")
 			}
-			timeoutContext, _ = context.WithTimeout(con, timeoutDuration)
-			stateMachine(client)
 		}
+		stateMachine(client)
 	}
 }
 
@@ -536,7 +535,7 @@ func stateMachine(client mqtt.Client) {
 
 func main() {
 
-	go updater(context.Background())
+	go updater()
 
 	//mqtt.DEBUG = log.New(os.Stdout, "", 0)
 	logMessage("Christmas Daemon started")
