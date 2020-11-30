@@ -1,6 +1,8 @@
 Daemon to automate christmas lights.
 Uses mqtt for both control and state
 
+Note that all messages are to be sent as persistent unless otherwise noted.
+
 mqtt hierarchy
 
 christmas/<region>/#
@@ -25,15 +27,6 @@ christmas/<region>/control
 christmas/<region>/state
   values are "on" and "off".  Current state of the lights.
 
-christmas/season/start
-  value is mm/dd.  Default is 11/1.
-
-christmas/season/end
-  value is mm/dd.  Default is 1/6.
-
-christmas/enable
-  value is true or false
-
 christmas/<region>/window-start
   value is either "light", which means turn on at dusk or hh:mm.
   Time is on a 24 hour clock.  Default is "light"
@@ -43,3 +36,19 @@ christmas/<region>/window-end
 
 christmas/<region>/devices
  payload is a comma separated list of devices in this region.
+ Completely overwrites the previous list of devices.  Any devices
+ that are in another region are moved to this one  Any devices
+ that were in this region but not listed here are dropped.
+
+christmas/<region>/drop
+ this non persistent message causes the system to forget a region and
+ all the devices in the region
+
+christmas/season/start
+  value is mm/dd.  Default is 11/1.
+
+christmas/season/end
+  value is mm/dd.  Default is 1/6.
+
+christmas/enable
+  value is true or false

@@ -33,6 +33,7 @@ type deviceType struct {
 	region string
 	outlet string
 	button string
+	active bool // used only in adding dropping devices.
 }
 
 type publishType struct {
@@ -159,14 +160,6 @@ var christmasHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mes
 		update.value1 = topicComponents[2]
 		update.value2 = payload
 		updateChan <- update
-
-		if update.value1 == "devices" {
-			for _, device := range strings.Split(payload, ",") {
-				update.update = "device"
-				update.value1 = device
-				updateChan <- update
-			}
-		}
 	}
 }
 
@@ -225,6 +218,50 @@ var deviceHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Messag
 }
 
 /*
+ * This routine processes a new device list for a region.
+ * Replaces old device list.
+ *
+ * Runs in the updater gothread, so is OK to manipulate deviceMap
+ */
+func updateDevices(region, devices string) {
+	// mark all devices inactive
+	for name, device := range deviceMap {
+		device.active = false
+		deviceMap[name] = device
+	}
+
+	// for every device mentioned, move to this region
+	// and mark it active
+	for _, deviceName := range strings.Split(devices, ",") {
+		// Get the device, if any, and initialize it to a good state
+		device, ok := deviceMap[deviceName]
+		if !ok {
+			// New device
+			device.button = "false"
+			device.outlet = "false"
+			device.region = region
+			deviceBackChan <- deviceName // tell main thread to subscribe
+			logMessage(fmt.Sprintf("New device %s in region %s", deviceName, region))
+		}
+		device.active = true
+		if device.region != region {
+			logMessage(fmt.Sprintf("Device %s moved from region %s to %s", deviceName, device.region, region))
+		}
+		device.region = region
+		deviceMap[deviceName] = device
+	}
+
+	// Now, for every device in this region that is inactive, drop it
+	for deviceName, device := range deviceMap {
+		if device.region == region && !device.active {
+			// we should stop subscribing, but that is too much work.
+			delete(deviceMap, deviceName)
+			logMessage(fmt.Sprintf("Device %s in region %s dropped", deviceName, device.region))
+		}
+	}
+}
+
+/*
  * All action requests come here and are serialized that way
  */
 func updater(con context.Context) {
@@ -243,6 +280,7 @@ func updater(con context.Context) {
 			}
 			switch update.update {
 			case "region":
+				// First, put this data into the region map
 				region, ok := regionMap[update.region]
 				if !ok {
 					region = make(map[string]string)
@@ -250,20 +288,16 @@ func updater(con context.Context) {
 				region[update.value1] = update.value2
 				regionMap[update.region] = region
 
+				// If this is a list of devices, we've more work to do
+				if update.value1 == "devices" {
+					updateDevices(update.region, update.value2)
+				}
+
 			case "light":
 				l, err := strconv.ParseInt(update.value1, 10, 32)
 				if err == nil {
 					lightLevel = int(l)
 				}
-			case "device":
-				device, ok := deviceMap[update.value1]
-				device.region = update.region
-				if !ok {
-					device.button = "false"
-					device.outlet = "false"
-				}
-				deviceMap[update.value1] = device
-				deviceBackChan <- update.value1 // tell main thread to subscribe
 
 			case "outlet":
 				device, ok := deviceMap[update.value1]
