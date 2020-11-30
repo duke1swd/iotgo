@@ -328,45 +328,42 @@ func updater(con context.Context) {
 }
 
 // parse "hh:mm" spec
-func parsehhmm(hhmm string, defaultHour int) (int, int) {
+// returns duration after midnight.
+func parsehhmm(hhmm string, defaultHour int) time.Duration {
+	defaultReturnValue := time.Duration(defaultHour) * time.Hour
 	if debug {
 		fmt.Println("\t\t\tParsing: " + hhmm)
 	}
 	hc := strings.Split(hhmm, ":")
 	if len(hc) != 2 {
-		return defaultHour, 0
+		return defaultReturnValue
 	}
 
 	hour, err := strconv.ParseInt(hc[0], 10, 32)
 	if err != nil {
-		return defaultHour, 0
+		return defaultReturnValue
 	}
 
 	min, err := strconv.ParseInt(hc[1], 10, 32)
 	if err != nil {
-		return defaultHour, 0
+		return defaultReturnValue
 	}
 
 	if hour < 0 || hour > 23 || min < 0 || min > 59 {
-		return defaultHour, 0
+		return defaultReturnValue
 	}
 
-	return int(hour), int(min)
+	return time.Duration(hour)*time.Hour + time.Duration(min)*time.Minute
 }
 
 // takes a specification in the form of "hh:mm" and decides when that is
 func hhmmWindow(now time.Time, spec string, defaultHour int) time.Time {
-	hour, minute := parsehhmm(spec, defaultHour)
-
-	// times before noon are assumed to be tomorrow
-	if hour < 12 {
-		hour += 24
-	}
+	when := parsehhmm(spec, defaultHour)
 
 	loc, _ := time.LoadLocation("Local")
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 
-	return dayStart.Add(time.Duration(hour) * time.Hour).Add(time.Duration(minute) * time.Minute)
+	return dayStart.Add(when)
 }
 
 /*
@@ -419,23 +416,30 @@ func stateMachine(client mqtt.Client) {
 	// For each region
 	for regionName, region := range regionMap {
 		// Are we in the window when the lights should be on?
-		var start, end bool
-		start = false
-		end = false
-
 		if debug {
 			fmt.Println("\tRegion: ", regionName)
 		}
 
-		startString := region["window-start"]
-		if startString == "light" {
-			start = lightLevel < 4 && now.Hour() >= 12
-		} else {
-			start = now.After(hhmmWindow(now, startString, 17))
-		}
-		end = now.Before(hhmmWindow(now, region["window-end"], 11+12))
+		now := time.Now()
 
-		inWindow := start && end
+		startString := region["window-start"]
+		start := hhmmWindow(now, startString, 15)
+		end := hhmmWindow(now, region["window-end"], 23)
+
+		inWindow := false
+		if start.Before(end) {
+			if now.After(start) && now.Before(end) {
+				inWindow = true
+			}
+		} else if now.After(start) || now.Before(end) {
+			inWindow = true
+		}
+
+		// if we are nominally in the window, but it is not yet dark, ...
+		if startString == "light" && inWindow && lightLevel < 4 {
+			inWindow = false
+		}
+
 		if debug {
 			fmt.Println("\t\tIn window:", inWindow)
 		}
