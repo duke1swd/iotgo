@@ -270,7 +270,7 @@ func updater(con context.Context) {
 	}
 
 	// every so often wake up whether we've recieved any thing to do or not.
-	timeoutDuration, _ := time.ParseDuration("1m")
+	timeoutDuration, _ := time.ParseDuration("30s")
 	timeoutContext, _ := context.WithTimeout(con, timeoutDuration)
 	for {
 		select {
@@ -294,6 +294,9 @@ func updater(con context.Context) {
 				}
 
 			case "light":
+				// This is done here, rather than in the message handler
+				// so that light messages will run the state machine.
+				// Threading model doesn't care
 				l, err := strconv.ParseInt(update.value1, 10, 32)
 				if err == nil {
 					lightLevel = int(l)
@@ -436,12 +439,12 @@ func stateMachine(client mqtt.Client) {
 		}
 
 		// if we are nominally in the window, but it is not yet dark, ...
-		if startString == "light" && inWindow && lightLevel < 4 {
+		if startString == "light" && inWindow && lightLevel >= 4 {
 			inWindow = false
 		}
 
 		if debug {
-			fmt.Println("\t\tIn window:", inWindow)
+			fmt.Printf("\t\tIn window at light level %d: %v", lightLevel, inWindow)
 		}
 
 		// handle button pushes and automatic vs manual states
