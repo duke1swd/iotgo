@@ -63,7 +63,7 @@ var (
 	debug             bool
 	lastPublish       time.Time
 	stateMachineDefer time.Duration
-	loc *time.Location
+	loc               *time.Location
 )
 
 func init() {
@@ -387,9 +387,54 @@ func hhmmWindow(now time.Time, spec string, defaultHour int) time.Time {
 	return dayStart.Add(when)
 }
 
+func setRegionState(regionName string, newState bool) {
+
+	region := regionMap[regionName]
+	// Now, see if this matches the public state
+	state, ok := region["state"]
+	if !ok || (newState && state != "on") || (!newState && state == "on") {
+		state = "off"
+		if newState {
+			state = "on"
+		}
+		// don't need to update the region map, as we'll recieve the message we are about to publish
+
+		var p publishType
+		p.topic = fmt.Sprintf("christmas/%s/state", regionName)
+		p.payload = state
+		publishChan <- p
+		logMessage(fmt.Sprintf("Set region %s to %s", regionName, state))
+	}
+
+	// for each device, check whether its state matches the desired state
+	// and set the device if necessary
+	for deviceName, device := range deviceMap {
+		if device.region == regionName {
+			var p publishType
+			p.topic = fmt.Sprintf("devices/%s/outlet/on/set", deviceName)
+			if device.outlet == "true" && !newState {
+				p.payload = "false"
+				publishChan <- p
+				if verboseLog {
+					logMessage(fmt.Sprintf("device %s in region %s set to off", deviceName, regionName))
+				}
+			}
+			if device.outlet == "false" && newState {
+				p.payload = "true"
+				publishChan <- p
+				if verboseLog {
+					logMessage(fmt.Sprintf("device %s in region %s set to on", deviceName, regionName))
+				}
+			}
+		}
+	}
+}
+
 // turn off all regions.  Either we are out of season or system is disabled
 func allOff() {
-	/* QQQ */
+	for regionName, _ := range regionMap {
+		setRegionState(regionName, false)
+	}
 }
 
 /*
@@ -434,7 +479,7 @@ func stateMachine(client mqtt.Client) {
 	// Are we in the season?
 	inSeason := false
 	start := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonStart)
-	end := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonEnd).Add(time.Duration(24) * time.Hour)
+	end := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonEnd).Add(time.Duration(24+9) * time.Hour)
 	if start.Before(end) {
 		if now.After(start) && now.Before(end) {
 			inSeason = true
@@ -532,44 +577,7 @@ func stateMachine(client mqtt.Client) {
 			fmt.Println("\t\tlights should be on:", shouldBeOn)
 		}
 
-		// Now, see if this matches the public state
-		state, ok := region["state"]
-		if !ok || shouldBeOn && state != "on" || !shouldBeOn && state == "on" {
-			state = "off"
-			if shouldBeOn {
-				state = "on"
-			}
-			// don't need to update the region map, as we'll recieve the message we are about to publish
-
-			var p publishType
-			p.topic = fmt.Sprintf("christmas/%s/state", regionName)
-			p.payload = state
-			publishChan <- p
-			logMessage(fmt.Sprintf("state in region %s set to %s", regionName, state))
-		}
-
-		// for each device, check whether its state matches the desired state
-		// and set the device if necessary
-		for deviceName, device := range deviceMap {
-			if device.region == regionName {
-				var p publishType
-				p.topic = fmt.Sprintf("devices/%s/outlet/on/set", deviceName)
-				if device.outlet == "true" && !shouldBeOn {
-					p.payload = "false"
-					publishChan <- p
-					if verboseLog {
-						logMessage(fmt.Sprintf("device %s in region %s set to off", deviceName, regionName))
-					}
-				}
-				if device.outlet == "false" && shouldBeOn {
-					p.payload = "true"
-					publishChan <- p
-					if verboseLog {
-						logMessage(fmt.Sprintf("device %s in region %s set to on", deviceName, regionName))
-					}
-				}
-			}
-		}
+		setRegionState(regionName, shouldBeOn)
 	}
 }
 
