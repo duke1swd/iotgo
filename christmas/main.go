@@ -21,6 +21,10 @@ const defaultLogDirectory = "/var/log"
 const defaultLogFileName = "HomeChristmas"
 const defaultMqttBroker = "tcp://localhost:1883"
 const defaultStateMachineTicker = 10 // number of seconds between pokes of the state machine.
+const defaultSeasonStartMonth = 11
+const defaultSeasonStartDay = 1
+const defaultSeasonEndMonth = 1
+const defaultSeasonEndDay = 6
 
 type updateType struct {
 	update string
@@ -49,8 +53,8 @@ var (
 	updateChan        chan updateType
 	deviceBackChan    chan string
 	publishChan       chan publishType
-	seasonStart       time.Time
-	seasonEnd         time.Time
+	seasonStart       time.Duration
+	seasonEnd         time.Duration
 	globalEnable      bool
 	verboseLog        bool
 	regionMap         map[string]map[string]string // map region to a set of devices
@@ -59,6 +63,7 @@ var (
 	debug             bool
 	lastPublish       time.Time
 	stateMachineDefer time.Duration
+	loc *time.Location
 )
 
 func init() {
@@ -87,8 +92,9 @@ func init() {
 		verboseLog = true
 	}
 
-	seasonStart, _ = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
-	seasonEnd, _ = time.Parse("2006-Jan-02 MST", "2100-Jan-06 EDT")
+	loc, _ = time.LoadLocation("Local")
+	seasonStart, _ = parsemmdd("11/1", defaultSeasonStartMonth, defaultSeasonStartDay)
+	seasonEnd, _ = parsemmdd("1/6", defaultSeasonEndMonth, defaultSeasonEndDay)
 	lastPublish = time.Now()
 
 	updateChan = make(chan updateType)
@@ -101,8 +107,41 @@ func init() {
 	stateMachineDefer = time.Duration(2) * time.Second
 }
 
+// parse "mm/dd" spec
+// returns duration after start of year
+func parsemmdd(mmdd string, defaultMonth, defaultDay int) (time.Duration, bool) {
+	now := time.Now()
+	yearBase := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc)
+	defaultReturnValue := time.Date(now.Year(), time.Month(defaultMonth), defaultDay, 0, 0, 0, 0, loc).Sub(yearBase)
+	if debug {
+		fmt.Println("\t\t\tParsing: " + mmdd)
+	}
+	mc := strings.Split(mmdd, "/")
+	if len(mc) != 2 {
+		return defaultReturnValue, false
+	}
+
+	month, err := strconv.ParseInt(mc[0], 10, 32)
+	if err != nil {
+		return defaultReturnValue, false
+	}
+
+	day, err := strconv.ParseInt(mc[1], 10, 32)
+	if err != nil {
+		return defaultReturnValue, false
+	}
+
+	if month < 1 || month > 12 || day < 1 || day > 31 {
+		return defaultReturnValue, false
+	}
+
+	return time.Date(now.Year(), time.Month(month), int(day), 0, 0, 0, 0, loc).Sub(yearBase), true
+}
+
 // All mqtt messages about christmas are handled here
 var christmasHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+	var ok bool
+
 	payload := string(msg.Payload())
 	topic := string(msg.Topic())
 	topicComponents := strings.Split(topic, "/")
@@ -113,35 +152,16 @@ var christmasHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mes
 
 	switch topicComponents[1] {
 	case "season":
-		// get the mm/dd stuff and turn it into time.Time
-		mmdd := strings.Split(payload, "/")
-		if len(mmdd) == 2 {
-			now := time.Now()
-			year := now.Year()
-			month, err := strconv.ParseInt(mmdd[0], 10, 32)
-			if err != nil {
-				return
+		switch topicComponents[2] {
+		case "start":
+			seasonStart, ok = parsemmdd(payload, defaultSeasonStartMonth, defaultSeasonStartDay)
+			if ok && verboseLog {
+				logMessage(fmt.Sprintf("Season Start set to %s", payload))
 			}
-			if month < 7 {
-				year++
-			}
-			day, err := strconv.ParseInt(mmdd[1], 10, 32)
-			if err != nil {
-				return
-			}
-			loc, _ := time.LoadLocation("Local")
-			seasonTime := time.Date(year, time.Month(month), int(day), 0, 0, 0, 0, loc)
-			switch topicComponents[2] {
-			case "start":
-				seasonStart = seasonTime
-				if verboseLog {
-					logMessage(fmt.Sprintf("Season Start set to %v", seasonStart))
-				}
-			case "end":
-				seasonEnd = seasonTime
-				if verboseLog {
-					logMessage(fmt.Sprintf("Season End set to %v", seasonEnd))
-				}
+		case "end":
+			seasonEnd, ok = parsemmdd(payload, defaultSeasonEndMonth, defaultSeasonEndDay)
+			if ok && verboseLog {
+				logMessage(fmt.Sprintf("Season End set to %s", payload))
 			}
 		}
 	case "enable":
@@ -362,10 +382,14 @@ func parsehhmm(hhmm string, defaultHour int) time.Duration {
 func hhmmWindow(now time.Time, spec string, defaultHour int) time.Time {
 	when := parsehhmm(spec, defaultHour)
 
-	loc, _ := time.LoadLocation("Local")
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 
 	return dayStart.Add(when)
+}
+
+// turn off all regions.  Either we are out of season or system is disabled
+func allOff() {
+	/* QQQ */
 }
 
 /*
@@ -378,6 +402,8 @@ func hhmmWindow(now time.Time, spec string, defaultHour int) time.Time {
    safe for it to access the deviceMap and the regionMap.
 */
 func stateMachine(client mqtt.Client) {
+	now := time.Now()
+
 	if debug {
 		fmt.Println("State Machine Running")
 	}
@@ -394,19 +420,35 @@ func stateMachine(client mqtt.Client) {
 		}
 	}
 
+	// If we've just published some stuff then don't run the state machine
+	if now.Sub(lastPublish) < stateMachineDefer {
+		return
+	}
+
 	// Is Chistmas enabled?
 	if !globalEnable {
+		allOff()
 		return
 	}
 
 	// Are we in the season?
-	now := time.Now()
-	if now.Before(seasonStart) || now.After(seasonEnd) {
-		return
+	inSeason := false
+	start := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonStart)
+	end := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonEnd).Add(time.Duration(24) * time.Hour)
+	if start.Before(end) {
+		if now.After(start) && now.Before(end) {
+			inSeason = true
+		}
+	} else if now.After(start) || now.Before(end) {
+		inSeason = true
 	}
 
-	// If we've just published some stuff then don't run the state machine
-	if time.Since(lastPublish) < stateMachineDefer {
+	if debug {
+		fmt.Println("\tIn season: ", inSeason)
+	}
+
+	if !inSeason {
+		allOff()
 		return
 	}
 
@@ -421,8 +463,6 @@ func stateMachine(client mqtt.Client) {
 		if debug {
 			fmt.Println("\tRegion: ", regionName)
 		}
-
-		now := time.Now()
 
 		startString := region["window-start"]
 		start := hhmmWindow(now, startString, 15)
@@ -443,7 +483,7 @@ func stateMachine(client mqtt.Client) {
 		}
 
 		if debug {
-			fmt.Printf("\t\tIn window at light level %d: %v", lightLevel, inWindow)
+			fmt.Printf("\t\tIn window at light level %d: %v\n", lightLevel, inWindow)
 		}
 
 		// handle button pushes and automatic vs manual states
