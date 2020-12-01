@@ -305,6 +305,7 @@ func updater() {
 				region, ok := regionMap[update.region]
 				if !ok {
 					region = make(map[string]string)
+					region["control"] = "auto"
 				}
 				region[update.value1] = update.value2
 				regionMap[update.region] = region
@@ -453,6 +454,7 @@ func stateMachine(client mqtt.Client) {
 		fmt.Println("State Machine Running")
 	}
 	// First, acknowledge button pushes
+	buttonPress := false
 	for deviceName, device := range deviceMap {
 		if device.button == "true" {
 			if verboseLog {
@@ -462,11 +464,12 @@ func stateMachine(client mqtt.Client) {
 			p.topic = fmt.Sprintf("devices/%s/button/button/set", deviceName)
 			p.payload = "false"
 			publishChan <- p
+			buttonPress = true
 		}
 	}
 
 	// If we've just published some stuff then don't run the state machine
-	if now.Sub(lastPublish) < stateMachineDefer {
+	if !buttonPress && now.Sub(lastPublish) < stateMachineDefer {
 		return
 	}
 
@@ -553,6 +556,10 @@ func stateMachine(client mqtt.Client) {
 				if debug {
 					fmt.Printf("\t\t%s[\"control\"] set to %s\n", regionName, region["control"])
 				}
+				var p publishType
+				p.topic = fmt.Sprintf("christmas/%s/control", regionName)
+				p.payload = region["control"]
+				publishChan <- p
 			}
 		}
 
