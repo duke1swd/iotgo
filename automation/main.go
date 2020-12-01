@@ -265,29 +265,29 @@ var r45handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) 
  * Convert a lux value into a "light" value.
  * Conversion is by the table seen here
  */
- type luxLightType struct {
-	 maxLux int
-	 light int
- }
+type luxLightType struct {
+	maxLux int
+	light  int
+}
 
- var luxConversion []luxLightType = []luxLightType{
-	 { 2, 0 },
-	 { 100 * 1, 1},		//  100
-	 { 100 * 2, 2},		//  200
-	 { 100 * 4, 3},		//  400
-	 { 100 * 8, 4},		//  800
-	 { 100 * 16, 5},	// 1600
-	 { 100 * 32, 6},	// 3200
- }
+var luxConversion []luxLightType = []luxLightType{
+	{2, 0},
+	{100 * 1, 1},  //  100
+	{100 * 2, 2},  //  200
+	{100 * 4, 3},  //  400
+	{100 * 8, 4},  //  800
+	{100 * 16, 5}, // 1600
+	{100 * 32, 6}, // 3200
+}
 
- func luxToLight(lux float64) int64 {
-	 for _, c := range(luxConversion) {
-		 if lux <= float64(c.maxLux) {
-			 return int64(c.light)
-		 }
-	 }
-	 return int64(len(luxConversion))
- }
+func luxToLight(lux float64) int64 {
+	for _, c := range luxConversion {
+		if lux <= float64(c.maxLux) {
+			return int64(c.light)
+		}
+	}
+	return int64(len(luxConversion))
+}
 
 /*
  * This function is a go routine that serializes updates to the sensorStates map.
@@ -374,7 +374,7 @@ func main() {
 		panic(token.Error())
 	}
 
-	logMessage("home automation daemon started")
+	logMessage("Home Automation Daemon started")
 
 	if token := client.Subscribe("devices/alarm-state-0001/alarm-state/state", 0, r1ahandler); token.Wait() && token.Error() != nil {
 		fmt.Println(token.Error())
