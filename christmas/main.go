@@ -154,8 +154,15 @@ var christmasHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mes
 		fmt.Printf("christmas message: %s %s\n", topic, payload)
 	}
 
+	if len(topicComponents) < 2 {
+		return
+	}
+
 	switch topicComponents[1] {
 	case "season":
+		if len(topicComponents) < 3 {
+			return
+		}
 		switch topicComponents[2] {
 		case "start":
 			seasonStart, ok = parsemmdd(payload, defaultSeasonStartMonth, defaultSeasonStartDay)
@@ -340,9 +347,10 @@ func updater() {
 				regionMap[update.region] = region
 
 				// Some region messages require more processing
-				if update.value1 == "devices" {
+				switch update.value1 {
+				case "devices":
 					updateDevices(update.region, update.value2)
-				} else if update.value1 == "drop" {
+				case "drop":
 					dropRegion(update.region)
 				}
 
@@ -499,6 +507,13 @@ func stateMachine(client mqtt.Client) {
 		}
 	}
 
+	// dont' delay if we've just seen a command
+	for _, region := range regionMap {
+		if _, ok := region["command"]; ok {
+			buttonPress = true
+		}
+	}
+
 	// If we've just published some stuff then don't run the state machine
 	if !buttonPress && now.Sub(lastPublish) < stateMachineDefer {
 		return
@@ -592,6 +607,45 @@ func stateMachine(client mqtt.Client) {
 				p.payload = region["control"]
 				publishChan <- p
 			}
+		}
+
+		// handle external commands
+		if cmd, ok := region["command"]; ok {
+			if verboseLog {
+				logMessage(fmt.Sprintf("command %s on region %s received", cmd, regionName))
+			}
+			switch cmd {
+			case "on":
+				if !inWindow {
+					region["control"] = "manual-o"
+				} else {
+					region["control"] = "auto"
+				}
+			case "off":
+				if inWindow {
+					region["control"] = "manual-i"
+				} else {
+					region["control"] = "auto"
+				}
+			case "toggle":
+				if inWindow {
+					region["control"] = "manual-i"
+				} else {
+					region["control"] = "manual-o"
+				}
+			}
+
+			var p publishType
+			p.topic = fmt.Sprintf("christmas/%s/control", regionName)
+			p.payload = region["control"]
+			publishChan <- p
+
+			delete(region, "command")
+			regionMap[regionName] = region
+
+			p.topic = fmt.Sprintf("christmas/%s/command", regionName)
+			p.payload = ""
+			publishChan <- p
 		}
 
 		// If manual control has expired, return to automatic control
