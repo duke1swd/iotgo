@@ -143,6 +143,10 @@ var christmasHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mes
 	var ok bool
 
 	payload := string(msg.Payload())
+	// ignore messages that are just erasing state
+	if payload == "" {
+		return
+	}
 	topic := string(msg.Topic())
 	topicComponents := strings.Split(topic, "/")
 
@@ -281,6 +285,31 @@ func updateDevices(region, devices string) {
 	}
 }
 
+func dropRegion(regionName string) {
+	// drop all devices in this region
+	logMessage("Dropping region " + regionName)
+	for deviceName, device := range deviceMap {
+		if device.region == regionName {
+			delete(deviceMap, deviceName)
+			logMessage("Dropping device " + deviceName)
+		}
+	}
+
+	// erase all region messages from mqtt
+	for topic, _ := range regionMap[regionName] {
+		var p publishType
+		p.topic = "christmas/" + regionName + "/" + topic
+		p.payload = ""
+		publishChan <- p
+		if verboseLog {
+			logMessage("Erasing topic " + p.topic)
+		}
+	}
+
+	delete(regionMap, regionName)
+	logMessage("Region " + regionName + " dropped")
+}
+
 /*
  * All action requests come here and are serialized that way
  */
@@ -310,9 +339,11 @@ func updater() {
 				region[update.value1] = update.value2
 				regionMap[update.region] = region
 
-				// If this is a list of devices, we've more work to do
+				// Some region messages require more processing
 				if update.value1 == "devices" {
 					updateDevices(update.region, update.value2)
+				} else if update.value1 == "drop" {
+					dropRegion(update.region)
 				}
 
 			case "light":
@@ -627,7 +658,11 @@ func main() {
 			}
 		case pubRequest := <-publishChan:
 			if debug {
-				fmt.Println("Publishing ", pubRequest.topic, " : ", pubRequest.payload)
+				if pubRequest.payload == "" {
+					fmt.Println("Erasing", pubRequest.topic)
+				} else {
+					fmt.Println("Publishing", pubRequest.topic, ": ", pubRequest.payload)
+				}
 			}
 			lastPublish = time.Now()
 			client.Publish(pubRequest.topic, 0, true, pubRequest.payload)
