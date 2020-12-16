@@ -11,6 +11,8 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,16 +24,20 @@ var (
 	flagL        bool
 	flagD        bool
 	flagc        string
-	flagf        bool
 	flagcPresent bool
-	mqttClient   mqtt.Client
+	flagf        bool
+	flagp        string
+	flagpPresent bool
 )
 
 var (
+	mqttClient          mqtt.Client
 	epoch               time.Time
 	deviceMap           map[string]map[string]string // all the properties of all the devices
-	deviceMatch         *regexp.Regexp               = regexp.MustCompile("devices/([a-zA-Z0-9\\-]+)")
-	deviceSubTopicMatch *regexp.Regexp               = regexp.MustCompile("devices/[a-zA-Z0-9\\-]+/(.*)")
+	allTopics           map[string]string
+	selectedTopics      []string
+	deviceMatch         *regexp.Regexp = regexp.MustCompile("devices/([a-zA-Z0-9\\-]+)")
+	deviceSubTopicMatch *regexp.Regexp = regexp.MustCompile("devices/[a-zA-Z0-9\\-]+/(.*)")
 	timeoutContext      context.Context
 	timeoutChannel      chan int = make(chan int)
 	homieVersion        int      = 3
@@ -42,15 +48,18 @@ var (
 func init() {
 	epoch, _ = time.Parse("2006-Jan-02 MST", "2018-Nov-01 EDT")
 	deviceMap = make(map[string]map[string]string)
+	allTopics = make(map[string]string)
 
 	flag.BoolVar(&flagl, "l", false, "list devices that are state \"lost\"")
 	flag.BoolVar(&flagL, "L", false, "list all devices and their state")
 	flag.BoolVar(&flagD, "D", false, "debugging")
 	flag.StringVar(&flagc, "c", "", "clear info for device")
 	flag.BoolVar(&flagf, "f", false, "with -c, clears devices that are not state \"lost\"")
+	flag.StringVar(&flagp, "p", "", "use a topic prefix instead of a device")
 
 	flag.Parse()
 	flagcPresent = (flagc != "")
+	flagpPresent = (flagp != "")
 
 	errors := 0
 
@@ -64,8 +73,18 @@ func init() {
 		errors += 1
 	}
 
-	if !flagcPresent && !flagl && !flagL {
-		fmt.Println("must specify one of -c, -l, or -L")
+	if flagcPresent && flagpPresent {
+		fmt.Printf("-p and -c are not compatible\n")
+		errors += 1
+	}
+
+	if flagpPresent && !(flagl || flagf) {
+		fmt.Printf("-p requires either -l or -f\n")
+		errors += 1
+	}
+
+	if !flagcPresent && !flagl && !flagL && !flagpPresent {
+		fmt.Println("must specify one of -c, -p, -l, or -L")
 		errors += 1
 	}
 
@@ -106,12 +125,17 @@ var f1 mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 	// tell the world we are still working
 	timeoutChannel <- 0
 
-	device := deviceMatch.FindStringSubmatch(topic)[1]
-	deviceSubTopic := deviceSubTopicMatch.FindStringSubmatch(topic)[1]
-	if deviceMap[device] == nil {
-		deviceMap[device] = make(map[string]string)
+	if flagpPresent {
+		allTopics[topic] = payload
+	} else {
+
+		device := deviceMatch.FindStringSubmatch(topic)[1]
+		deviceSubTopic := deviceSubTopicMatch.FindStringSubmatch(topic)[1]
+		if deviceMap[device] == nil {
+			deviceMap[device] = make(map[string]string)
+		}
+		deviceMap[device][deviceSubTopic] = payload
 	}
-	deviceMap[device][deviceSubTopic] = payload
 }
 
 func getClient() {
@@ -131,7 +155,12 @@ func getClient() {
 func getDevices() {
 	c := mqttClient
 
-	if token := c.Subscribe("devices/#", 0, nil); token.Wait() && token.Error() != nil {
+	subscription := "devices/#"
+	if flagpPresent {
+		subscription = "#"
+	}
+
+	if token := c.Subscribe(subscription, 0, nil); token.Wait() && token.Error() != nil {
 		fmt.Println(token.Error())
 		os.Exit(1)
 	}
@@ -192,6 +221,43 @@ func clearDevice(device string) bool {
 	return false
 }
 
+/*
+ * Create a slice of strings.  Each entry is a topic that matched.
+ * Sort the slice in alpha order
+ */
+func topicMatch(topic string) bool {
+	return strings.HasPrefix(topic, flagp)
+}
+
+func buildTopics() {
+
+	for k, _ := range allTopics {
+		if topicMatch(k) {
+			selectedTopics = append(selectedTopics, k)
+		}
+	}
+
+	// sort the slice
+	sort.Slice(selectedTopics, func(i, j int) bool { return selectedTopics[i] < selectedTopics[j] })
+}
+
+func topicInfo() {
+	l := 0
+	for _, v := range selectedTopics {
+		if len(v) > l {
+			l = len(v)
+		}
+	}
+
+	f := "%" + strconv.Itoa(l) + "s: %s\n"
+	for _, v := range selectedTopics {
+		fmt.Printf(f, v, allTopics[v])
+	}
+}
+
+func topicClear() {
+}
+
 func main() {
 	var errors bool = false
 
@@ -200,24 +266,36 @@ func main() {
 
 	getClient()
 	getDevices()
-	if flagl || flagL {
-		deviceInfo()
-	}
 
-	if flagcPresent {
-		if flagc == "ALL" {
-			for d, p := range deviceMap {
-				if p["$state"] == "lost" {
-					if clearDevice(d) {
-						errors = true
+	if flagpPresent {
+		buildTopics()
+		if flagl {
+			topicInfo()
+		} else if flagf {
+			topicClear()
+		}
+	} else {
+
+		if flagl || flagL {
+			deviceInfo()
+		}
+
+		if flagcPresent {
+			if flagc == "ALL" {
+				for d, p := range deviceMap {
+					if p["$state"] == "lost" {
+						if clearDevice(d) {
+							errors = true
+						}
 					}
 				}
+			} else {
+				errors = clearDevice(flagc)
 			}
-		} else {
-			errors = clearDevice(flagc)
+			if errors {
+				os.Exit(1)
+			}
 		}
-		if errors {
-			os.Exit(1)
-		}
+
 	}
 }
