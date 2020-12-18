@@ -12,16 +12,24 @@ import (
 	"time"
 )
 
+type homieDevice struct {
+	uid  string
+	name string
+	addr net.Addr
+	on   bool
+}
+
 var (
-	debug     bool
-	deviceMap map[string]map[string]interface{}
-	homieMap  map[string]string
+	debug    bool
+	homieMap map[string]homieDevice
 )
 
 func init() {
 	flag.BoolVar(&debug, "d", false, "debugging")
 
 	flag.Parse()
+
+	homieMap = make(map[string]homieDevice)
 }
 
 func tpEncode(data []byte) {
@@ -154,13 +162,19 @@ func listenerSysinfo(pc net.PacketConn, output chan map[string]interface{}) {
 				fmt.Printf("\t%s\n", k)
 			}
 		}
+		gmap["addr"] = addr
 		output <- gmap
 	}
 }
 
+// converts a plug's nickname into a valid homie name.
+func homieName(alias string) string {
+	return alias
+}
+
 // Get the system info back.  Should all come back in 2 seconds
 func buildDeviceMap(backChannel chan map[string]interface{}) {
-	deviceMap = make(map[string]map[string]interface{})
+	var device homieDevice
 
 	timer := time.NewTimer(time.Duration(2) * time.Second)
 
@@ -169,6 +183,37 @@ func buildDeviceMap(backChannel chan map[string]interface{}) {
 		case <-timer.C:
 			return
 		case gmap := <-backChannel:
+			a, ok := gmap["alias"]
+			if !ok {
+				if debug {
+					fmt.Printf("gmap has no alias\n")
+				}
+				continue
+			}
+			name, ok := a.(string)
+			if !ok {
+				if debug {
+					fmt.Printf("gmap alias is not a string (!)\n")
+				}
+				continue
+			}
+			device.name = homieName(name)
+
+			ad, ok := gmap["addr"]
+			if !ok {
+				if debug {
+					fmt.Printf("gmap has no addr\n")
+				}
+				continue
+			}
+			device.addr, ok = ad.(net.Addr)
+			if !ok {
+				if debug {
+					fmt.Printf("gmap addr is not of type net.Addr\n")
+				}
+				continue
+			}
+
 			d, ok := gmap["deviceId"]
 			if !ok {
 				if debug {
@@ -176,19 +221,43 @@ func buildDeviceMap(backChannel chan map[string]interface{}) {
 				}
 				continue
 			}
-			deviceId, ok := d.(string)
+			device.uid, ok = d.(string)
 			if !ok {
 				if debug {
 					fmt.Printf("gmap deviceId is not a string (!)\n")
 				}
 				continue
 			}
-			deviceMap[deviceId] = gmap
+
+			r, ok := gmap["relay_state"]
+			if !ok {
+				if debug {
+					fmt.Printf("gmap has no relay_state\n")
+				}
+				continue
+			}
+			relay, ok := r.(float64)
+			if !ok {
+				if debug {
+					fmt.Printf("gmap relay_state (%v) is not an int (!)\n", relay)
+				}
+				continue
+			}
+			switch relay {
+			case 0:
+				device.on = false
+			case 1:
+				device.on = true
+			default:
+				if debug {
+					fmt.Printf("gmap relay_state(%s) is not \"0\" or \"1\"\n", relay)
+				}
+				continue
+			}
+
+			homieMap[device.name] = device
 		}
 	}
-}
-
-func buildHomieMap() {
 }
 
 func main() {
@@ -211,11 +280,8 @@ func main() {
 
 	if debug {
 		fmt.Printf("Found these devices\n")
-		for k, _ := range deviceMap {
+		for k, _ := range homieMap {
 			fmt.Printf("\t%s\n", k)
 		}
 	}
-
-	// Build a list of Homie devices
-	buildHomieMap()
 }
