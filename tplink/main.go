@@ -5,6 +5,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -21,11 +22,13 @@ type homieDevice struct {
 
 var (
 	debug    bool
+	debugV   bool
 	homieMap map[string]homieDevice
 )
 
 func init() {
 	flag.BoolVar(&debug, "d", false, "debugging")
+	flag.BoolVar(&debugV, "D", false, "extreme debugging")
 
 	flag.Parse()
 
@@ -54,7 +57,7 @@ func tpDecode(data []byte) {
 }
 
 func printData(data []byte) {
-	if !debug {
+	if !debugV {
 		return
 	}
 
@@ -91,8 +94,10 @@ func listenerSysinfo(pc net.PacketConn, output chan map[string]interface{}) {
 		}
 		buf = buf[:n] // throw away the rest of the buffer
 		tpDecode(buf)
-		if debug {
+		if debugV {
 			fmt.Printf("Got %d bytes from addr %v: %s\n", n, addr, string(buf))
+		} else if debug {
+			fmt.Printf("Got %d bytes from addr %v\n", n, addr)
 		}
 
 		// This long string of code peels away fluff and leaves us with the sysinfo object.
@@ -111,7 +116,7 @@ func listenerSysinfo(pc net.PacketConn, output chan map[string]interface{}) {
 			}
 			continue
 		}
-		if debug {
+		if debugV {
 			fmt.Printf("response keys found:\n")
 			for k, _ := range rmap {
 				fmt.Printf("\t%s\n", k)
@@ -133,7 +138,7 @@ func listenerSysinfo(pc net.PacketConn, output chan map[string]interface{}) {
 			continue
 		}
 
-		if debug {
+		if debugV {
 			fmt.Printf("system keys found:\n")
 			for k, _ := range smap {
 				fmt.Printf("\t%s\n", k)
@@ -156,7 +161,7 @@ func listenerSysinfo(pc net.PacketConn, output chan map[string]interface{}) {
 			continue
 		}
 
-		if debug {
+		if debugV {
 			fmt.Printf("get_sysinfo keys found:\n")
 			for k, _ := range gmap {
 				fmt.Printf("\t%s\n", k)
@@ -172,92 +177,189 @@ func homieName(alias string) string {
 	return alias
 }
 
-// Get the system info back.  Should all come back in 2 seconds
-func buildDeviceMap(backChannel chan map[string]interface{}) {
+// Convert the json stuff that came back from the tp-link to our homieDevice
+func tp2homie(gmap map[string]interface{}) (homieDevice, bool) {
+
 	var device homieDevice
 
-	timer := time.NewTimer(time.Duration(2) * time.Second)
+	a, ok := gmap["alias"]
+	if !ok {
+		if debug {
+			fmt.Printf("gmap has no alias\n")
+		}
+		return device, false
+	}
+	name, ok := a.(string)
+	if !ok {
+		if debug {
+			fmt.Printf("gmap alias is not a string (!)\n")
+		}
+		return device, false
+	}
+	device.name = homieName(name)
 
+	ad, ok := gmap["addr"]
+	if !ok {
+		if debug {
+			fmt.Printf("gmap has no addr\n")
+		}
+		return device, false
+	}
+	device.addr, ok = ad.(net.Addr)
+	if !ok {
+		if debug {
+			fmt.Printf("gmap addr is not of type net.Addr\n")
+		}
+		return device, false
+	}
+
+	d, ok := gmap["deviceId"]
+	if !ok {
+		if debug {
+			fmt.Printf("gmap has no deviceId\n")
+		}
+		return device, false
+	}
+	device.uid, ok = d.(string)
+	if !ok {
+		if debug {
+			fmt.Printf("gmap deviceId is not a string (!)\n")
+		}
+		return device, false
+	}
+
+	r, ok := gmap["relay_state"]
+	if !ok {
+		if debug {
+			fmt.Printf("gmap has no relay_state\n")
+		}
+		return device, false
+	}
+	relay, ok := r.(float64)
+	if !ok {
+		if debug {
+			fmt.Printf("gmap relay_state (%v) is not an float (!)\n", relay)
+		}
+		return device, false
+	}
+	switch int(relay) {
+	case 0:
+		device.on = false
+	case 1:
+		device.on = true
+	default:
+		if debug {
+			fmt.Printf("gmap relay_state(%f) is not 0 or 1\n", relay)
+		}
+		return device, false
+	}
+
+	return device, true
+}
+
+// Process events and do things
+func run(backChannel chan map[string]interface{}) {
 	for {
-		select {
-		case <-timer.C:
-			return
-		case gmap := <-backChannel:
-			a, ok := gmap["alias"]
-			if !ok {
-				if debug {
-					fmt.Printf("gmap has no alias\n")
-				}
-				continue
-			}
-			name, ok := a.(string)
-			if !ok {
-				if debug {
-					fmt.Printf("gmap alias is not a string (!)\n")
-				}
-				continue
-			}
-			device.name = homieName(name)
+		gmap := <-backChannel
 
-			ad, ok := gmap["addr"]
-			if !ok {
-				if debug {
-					fmt.Printf("gmap has no addr\n")
-				}
-				continue
+		device, ok := tp2homie(gmap)
+		if ok {
+			homieMap[device.uid] = device
+			if debug {
+				fmt.Printf("Got device %s\n", device.name)
+				fmt.Printf("\tRelay is On: %v\n", device.on)
+				fmt.Printf("\tAddress: %s\n", device.addr.String())
 			}
-			device.addr, ok = ad.(net.Addr)
-			if !ok {
-				if debug {
-					fmt.Printf("gmap addr is not of type net.Addr\n")
-				}
-				continue
-			}
-
-			d, ok := gmap["deviceId"]
-			if !ok {
-				if debug {
-					fmt.Printf("gmap has no deviceId\n")
-				}
-				continue
-			}
-			device.uid, ok = d.(string)
-			if !ok {
-				if debug {
-					fmt.Printf("gmap deviceId is not a string (!)\n")
-				}
-				continue
-			}
-
-			r, ok := gmap["relay_state"]
-			if !ok {
-				if debug {
-					fmt.Printf("gmap has no relay_state\n")
-				}
-				continue
-			}
-			relay, ok := r.(float64)
-			if !ok {
-				if debug {
-					fmt.Printf("gmap relay_state (%v) is not an int (!)\n", relay)
-				}
-				continue
-			}
-			switch relay {
-			case 0:
-				device.on = false
-			case 1:
-				device.on = true
-			default:
-				if debug {
-					fmt.Printf("gmap relay_state(%s) is not \"0\" or \"1\"\n", relay)
-				}
-				continue
-			}
-
-			homieMap[device.name] = device
+			_, ok := callTCP(device, "{\"system\":{\"set_relay_state\":{\"state\":1}}}")
+			fmt.Printf("call returns %v\n", ok)
 		}
 	}
+}
+
+// Call and response to the device over TCP
+func callTCP(device homieDevice, call string) (interface{}, bool) {
+	var dialer net.Dialer
+	dialer.Timeout = time.Duration(2) * time.Second // the device responds quickly or not at all
+
+	conn, err := dialer.Dial("tcp", device.addr.String())
+	if err != nil {
+		if debug {
+			fmt.Printf("dial out to device via tcp failed: %v\n", err)
+		}
+		return nil, false
+	}
+	defer conn.Close()
+
+	// First, tell the device how long the message will be
+	lengthBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(lengthBytes, uint32(len(call)))
+	n, err := conn.Write(lengthBytes)
+	if n != 4 {
+		if debug {
+			fmt.Printf("Wrote %d bytes rather than 4\n", n)
+		}
+		return nil, false
+	}
+	if err != nil {
+		if debug {
+			fmt.Printf("Error on writing length to TCP: %v\n", err)
+		}
+		return nil, false
+	}
+
+	// Now, write the message
+	writeBuffer := []byte(call)
+	tpEncode(writeBuffer)
+	n, err = conn.Write(writeBuffer)
+	if n != len(call) {
+		if debug {
+			fmt.Printf("Wrote %d bytes rather than %d\n", n, len(call))
+		}
+		return nil, false
+	}
+	if err != nil {
+		if debug {
+			fmt.Printf("Error on writing message to TCP: %v\n", err)
+		}
+		return nil, false
+	}
+
+	// Now, read back the length
+	n, err = conn.Read(lengthBytes)
+	if n != 4 {
+		if debug {
+			fmt.Printf("Read %d bytes rather than 4\n", n)
+		}
+		return nil, false
+	}
+	if err != nil {
+		if debug {
+			fmt.Printf("Error on reading length from TCP: %v\n", err)
+		}
+		return nil, false
+	}
+	lenToRead := int(binary.BigEndian.Uint32(lengthBytes))
+	readBuffer := make([]byte, lenToRead)
+
+	// Read the response message
+	n, err = conn.Read(readBuffer)
+	if n != lenToRead {
+		if debug {
+			fmt.Printf("Read %d bytes rather than %d\n", n, lenToRead)
+		}
+		return nil, false
+	}
+	if err != nil {
+		if debug {
+			fmt.Printf("Error on reading message from TCP: %v\n", err)
+		}
+		return nil, false
+	}
+	tpDecode(readBuffer)
+	if debugV {
+		fmt.Printf("Response is %s\n", string(readBuffer))
+	}
+	return nil, true
 }
 
 func main() {
@@ -276,12 +378,5 @@ func main() {
 	broadcast(pc, []byte("{\"system\":{\"get_sysinfo\":null},\"emeter\":{\"get_realtime\":null}}"))
 
 	// Collect the resposes
-	buildDeviceMap(backChannel)
-
-	if debug {
-		fmt.Printf("Found these devices\n")
-		for k, _ := range homieMap {
-			fmt.Printf("\t%s\n", k)
-		}
-	}
+	run(backChannel)
 }
