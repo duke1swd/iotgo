@@ -1,5 +1,5 @@
 /*
- * Christmas daemon.  See README
+ * Lighting daemon.  See README
  */
 
 package main
@@ -18,7 +18,7 @@ import (
 )
 
 const defaultLogDirectory = "/var/log"
-const defaultLogFileName = "HomeChristmas"
+const defaultLogFileName = "HomeLighting"
 const defaultMqttBroker = "tcp://localhost:1883"
 const defaultStateMachineTicker = 10 // number of seconds between pokes of the state machine.
 const defaultSeasonStartMonth = 11
@@ -138,8 +138,8 @@ func parsemmdd(mmdd string, defaultMonth, defaultDay int) (time.Duration, bool) 
 	return time.Date(now.Year(), time.Month(month), int(day), 0, 0, 0, 0, loc).Sub(yearBase), true
 }
 
-// All mqtt messages about christmas are handled here
-var christmasHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+// All mqtt messages about lighting are handled here
+var lightingHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 	var ok bool
 
 	payload := string(msg.Payload())
@@ -151,7 +151,7 @@ var christmasHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mes
 	topicComponents := strings.Split(topic, "/")
 
 	if debug {
-		fmt.Printf("christmas message: %s %s\n", topic, payload)
+		fmt.Printf("lighting message: %s %s\n", topic, payload)
 	}
 
 	if len(topicComponents) < 2 {
@@ -179,10 +179,10 @@ var christmasHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mes
 		switch payload {
 		case "true":
 			globalEnable = true
-			logMessage("Christmas control enabled")
+			logMessage("Lighting control enabled")
 		case "false":
 			globalEnable = false
-			logMessage("Christmas control disabled")
+			logMessage("Lighting control disabled")
 		}
 	default:
 		var update updateType
@@ -305,7 +305,7 @@ func dropRegion(regionName string) {
 	// erase all region messages from mqtt
 	for topic, _ := range regionMap[regionName] {
 		var p publishType
-		p.topic = "christmas/" + regionName + "/" + topic
+		p.topic = "lighting/" + regionName + "/" + topic
 		p.payload = ""
 		publishChan <- p
 		if verboseLog {
@@ -440,7 +440,7 @@ func setRegionState(regionName string, newState bool) {
 		// don't need to update the region map, as we'll recieve the message we are about to publish
 
 		var p publishType
-		p.topic = fmt.Sprintf("christmas/%s/state", regionName)
+		p.topic = fmt.Sprintf("lighting/%s/state", regionName)
 		p.payload = state
 		publishChan <- p
 		logMessage(fmt.Sprintf("Set region %s to %s", regionName, state))
@@ -603,7 +603,7 @@ func stateMachine(client mqtt.Client) {
 					fmt.Printf("\t\t%s[\"control\"] set to %s\n", regionName, region["control"])
 				}
 				var p publishType
-				p.topic = fmt.Sprintf("christmas/%s/control", regionName)
+				p.topic = fmt.Sprintf("lighting/%s/control", regionName)
 				p.payload = region["control"]
 				publishChan <- p
 			}
@@ -636,14 +636,14 @@ func stateMachine(client mqtt.Client) {
 			}
 
 			var p publishType
-			p.topic = fmt.Sprintf("christmas/%s/control", regionName)
+			p.topic = fmt.Sprintf("lighting/%s/control", regionName)
 			p.payload = region["control"]
 			publishChan <- p
 
 			delete(region, "command")
 			regionMap[regionName] = region
 
-			p.topic = fmt.Sprintf("christmas/%s/command", regionName)
+			p.topic = fmt.Sprintf("lighting/%s/command", regionName)
 			p.payload = ""
 			publishChan <- p
 		}
@@ -678,10 +678,10 @@ func main() {
 	go updater()
 
 	//mqtt.DEBUG = log.New(os.Stdout, "", 0)
-	logMessage("Christmas Daemon started")
+	logMessage("Lighting Daemon started")
 	logMessage("mqtt broker = " + mqttBroker)
 	mqtt.ERROR = log.New(os.Stdout, "", 0)
-	opts := mqtt.NewClientOptions().AddBroker(mqttBroker).SetClientID("christmas-daemon")
+	opts := mqtt.NewClientOptions().AddBroker(mqttBroker).SetClientID("lighting-daemon")
 	opts.SetKeepAlive(60 * time.Second)
 	opts.SetPingTimeout(1 * time.Second)
 
@@ -690,7 +690,7 @@ func main() {
 		panic(token.Error())
 	}
 
-	if token := client.Subscribe("christmas/#", 0, christmasHandler); token.Wait() && token.Error() != nil {
+	if token := client.Subscribe("lighting/#", 0, lightingHandler); token.Wait() && token.Error() != nil {
 		fmt.Println(token.Error())
 		os.Exit(1)
 	}

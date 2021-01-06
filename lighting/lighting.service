@@ -1,12 +1,12 @@
 [Unit]
-Description=Automatic Christmas Lights
+Description=Automatic Lighting Control
 After=network-online.target
 
 [Service]
 Environment=MQTTBROKER=tcp://DanielPi3:1883
 Type=simple
 Restart=always
-ExecStart=/usr/local/bin/christmas
+ExecStart=/usr/local/bin/lighting
 
 [Install]
 WantedBy=multi-user.target
