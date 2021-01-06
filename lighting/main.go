@@ -138,8 +138,6 @@ func parsemmdd(mmdd string, defaultMonth, defaultDay int) (time.Duration, bool) 
 
 // All mqtt messages about lighting are handled here
 var lightingHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
-	var ok bool
-
 	payload := string(msg.Payload())
 	// ignore messages that are just erasing state
 	if payload == "" {
@@ -517,27 +515,27 @@ func stateMachine(client mqtt.Client) {
 
 		// Are we in the season?
 		inSeason := true
-		seasonStartString, ok1 := regionMap["season/start"]
-		seasonEndString, ok2 := regionMap["season/end"]
+		seasonStartString, ok1 := region["season/start"]
+		seasonEndString, ok2 := region["season/end"]
 		if ok1 && ok2 {
 			inSeason = false
 
-		seasonStart:
-			ok = parsemmdd(seasonStartString, defaultSeasonStartMonth, defaultSeasonStartDay)
-		seasonEnd:
-			ok = parsemmdd(seasonEndString, defaultSeasonEndMonth, defaultSeasonEndDay)
-			start := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonStart)
-			end := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonEnd).Add(time.Duration(24+9) * time.Hour)
-			if start.Before(end) {
-				if now.After(start) && now.Before(end) {
+			seasonStart, ok1 := parsemmdd(seasonStartString, defaultSeasonStartMonth, defaultSeasonStartDay)
+			seasonEnd, ok2 := parsemmdd(seasonEndString, defaultSeasonEndMonth, defaultSeasonEndDay)
+			if ok1 && ok2 {
+				start := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonStart)
+				end := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonEnd).Add(time.Duration(24+9) * time.Hour)
+				if start.Before(end) {
+					if now.After(start) && now.Before(end) {
+						inSeason = true
+					}
+				} else if now.After(start) || now.Before(end) {
 					inSeason = true
 				}
-			} else if now.After(start) || now.Before(end) {
-				inSeason = true
-			}
 
-			if debug {
-				fmt.Println("\tIn season: ", inSeason)
+				if debug {
+					fmt.Println("\tIn season: ", inSeason)
+				}
 			}
 		}
 
