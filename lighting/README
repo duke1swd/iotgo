@@ -35,11 +35,11 @@ UI:
     lighting/<region>/drop
      all the devices in the region
 
-    lighting/season/start
-      value is mm/dd.  Default is 11/1.
+    lighting/<region>/season/start
+      value is mm/dd.  Default is year round
 
-    lighting/season/end
-      value is mm/dd.  Default is 1/6.
+    lighting/<region>/season/end
+      value is mm/dd.  Default is year round
 
     lighting/enable
       value is true or false

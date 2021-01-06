@@ -93,8 +93,6 @@ func init() {
 	}
 
 	loc, _ = time.LoadLocation("Local")
-	seasonStart, _ = parsemmdd("11/1", defaultSeasonStartMonth, defaultSeasonStartDay)
-	seasonEnd, _ = parsemmdd("1/6", defaultSeasonEndMonth, defaultSeasonEndDay)
 	lastPublish = time.Now()
 
 	updateChan = make(chan updateType)
@@ -159,22 +157,6 @@ var lightingHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mess
 	}
 
 	switch topicComponents[1] {
-	case "season":
-		if len(topicComponents) < 3 {
-			return
-		}
-		switch topicComponents[2] {
-		case "start":
-			seasonStart, ok = parsemmdd(payload, defaultSeasonStartMonth, defaultSeasonStartDay)
-			if ok && verboseLog {
-				logMessage(fmt.Sprintf("Season Start set to %s", payload))
-			}
-		case "end":
-			seasonEnd, ok = parsemmdd(payload, defaultSeasonEndMonth, defaultSeasonEndDay)
-			if ok && verboseLog {
-				logMessage(fmt.Sprintf("Season End set to %s", payload))
-			}
-		}
 	case "enable":
 		switch payload {
 		case "true":
@@ -519,40 +501,46 @@ func stateMachine(client mqtt.Client) {
 		return
 	}
 
-	// Is Chistmas enabled?
+	// Is lighting control enabled?
 	if !globalEnable {
 		allOff()
 		return
 	}
 
-	// Are we in the season?
-	inSeason := false
-	start := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonStart)
-	end := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonEnd).Add(time.Duration(24+9) * time.Hour)
-	if start.Before(end) {
-		if now.After(start) && now.Before(end) {
-			inSeason = true
-		}
-	} else if now.After(start) || now.Before(end) {
-		inSeason = true
-	}
-
 	if debug {
-		fmt.Println("\tIn season: ", inSeason)
-	}
-
-	if !inSeason {
-		allOff()
-		return
-	}
-
-	if debug {
-		fmt.Println("\tEnabled and in season")
+		fmt.Println("\tEnabled")
 		fmt.Println("\tLight level is", lightLevel)
 	}
 
 	// For each region
 	for regionName, region := range regionMap {
+
+		// Are we in the season?
+		inSeason := true
+		seasonStartString, ok1 := regionMap["season/start"]
+		seasonEndString, ok2 := regionMap["season/end"]
+		if ok1 && ok2 {
+			inSeason = false
+
+		seasonStart:
+			ok = parsemmdd(seasonStartString, defaultSeasonStartMonth, defaultSeasonStartDay)
+		seasonEnd:
+			ok = parsemmdd(seasonEndString, defaultSeasonEndMonth, defaultSeasonEndDay)
+			start := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonStart)
+			end := time.Date(now.Year(), time.Month(1), 1, 0, 0, 0, 0, loc).Add(seasonEnd).Add(time.Duration(24+9) * time.Hour)
+			if start.Before(end) {
+				if now.After(start) && now.Before(end) {
+					inSeason = true
+				}
+			} else if now.After(start) || now.Before(end) {
+				inSeason = true
+			}
+
+			if debug {
+				fmt.Println("\tIn season: ", inSeason)
+			}
+		}
+
 		// Are we in the window when the lights should be on?
 		if debug {
 			fmt.Println("\tRegion: ", regionName)
