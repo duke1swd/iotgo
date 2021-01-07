@@ -63,8 +63,8 @@ func init() {
 
 	errors := 0
 
-	if flagf && !flagcPresent {
-		fmt.Printf("-f (Force) requires -c <dev>\n")
+	if flagf && !flagcPresent && !flagpPresent {
+		fmt.Printf("-f (Force) requires -c <dev> or -p <string>\n")
 		errors += 1
 	}
 
@@ -256,6 +256,14 @@ func topicInfo() {
 }
 
 func topicClear() {
+	fmt.Println("Clearing topics:")
+	for _, v := range selectedTopics {
+		fmt.Printf("\t%s\n", v)
+		publishToken := mqttClient.Publish(v, 0, true, "")
+		if publishToken.Wait() && publishToken.Error() != nil {
+			panic(publishToken.Error())
+		}
+	}
 }
 
 func main() {
