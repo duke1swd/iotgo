@@ -50,11 +50,11 @@ func init() {
 	deviceMap = make(map[string]map[string]string)
 	allTopics = make(map[string]string)
 
-	flag.BoolVar(&flagl, "l", false, "list devices that are state \"lost\"")
+	flag.BoolVar(&flagl, "l", false, "list devices that are state \"lost\" or \"disconnected\"")
 	flag.BoolVar(&flagL, "L", false, "list all devices and their state")
 	flag.BoolVar(&flagD, "D", false, "debugging")
 	flag.StringVar(&flagc, "c", "", "clear info for device")
-	flag.BoolVar(&flagf, "f", false, "with -c, clears devices that are not state \"lost\"")
+	flag.BoolVar(&flagf, "f", false, "with -c, clears devices that are not state \"lost\" or \"disconnected\"")
 	flag.StringVar(&flagp, "p", "", "use a topic prefix instead of a device")
 
 	flag.Parse()
@@ -187,7 +187,7 @@ func deviceInfo() {
 		}
 		if flagL {
 			fmt.Printf("%s: state=%s\n", dev, state)
-		} else if state == "lost" {
+		} else if state == "lost" || state == "disconnected" {
 			fmt.Println(dev)
 		}
 	}
@@ -202,7 +202,8 @@ func clearDevice(device string) bool {
 		return true
 	}
 
-	if !flagf && properties["$state"] != "lost" {
+	state := properties["$state"]
+	if !flagf && state != "lost" && state != "disconnected" {
 		fmt.Printf("Device %s not known to be offline\n", device)
 		return true
 	}
@@ -291,7 +292,8 @@ func main() {
 		if flagcPresent {
 			if flagc == "ALL" {
 				for d, p := range deviceMap {
-					if p["$state"] == "lost" {
+					state := p["$state"]
+					if state == "lost" || state == "disconnected" {
 						if clearDevice(d) {
 							errors = true
 						}
