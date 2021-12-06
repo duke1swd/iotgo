@@ -114,7 +114,7 @@ var f1 mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 	payload := string(msg.Payload())
 
 	// Ignore broadcast messages
-	if strings.Contains(topic, "$broadcast") {
+	if !flagpPresent && strings.Contains(topic, "$broadcast") {
 		return
 	}
 
