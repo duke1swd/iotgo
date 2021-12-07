@@ -59,7 +59,7 @@ type publishType struct {
  window-end
 
 
- */
+*/
 
 var (
 	client            mqtt.Client
@@ -372,14 +372,14 @@ func updater() {
 					}
 					if device.outlet != update.value2 {
 						device.outlet = update.value2
-						if debug  {
+						if debug {
 							fmt.Printf("\t\t\tChanged\n")
 						}
 
 						// did we just change to a state that is not the region state?
 						region, ok := regionMap[device.region]
 						if ok && ((device.outlet == "true" && region["state"] == "off") ||
-							  (device.outlet == "false" && region["state"] == "on")) {
+							(device.outlet == "false" && region["state"] == "on")) {
 							device.button = "true"
 							if debug {
 								fmt.Printf("\t\tXXX Set device %s outlet set to %s trigger inferred button\n",
