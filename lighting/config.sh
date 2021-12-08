@@ -7,7 +7,7 @@ done << EOF
 lighting/enable true
 lighting/indoor/window-start light
 lighting/indoor/window-end 23:00
-lighting/indoor/devices tp-plug-0003,tp-plug-0004
+lighting/indoor/devices tp-plug-03,tp-plug-04
 lighting/indoor/season/start 11/1
 lighting/indoor/season/end 1/6
 lighting/outdoor/season/start 11/1

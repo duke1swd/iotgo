@@ -524,7 +524,7 @@ func stateMachine(client mqtt.Client) {
 				logMessage(fmt.Sprintf("button on device %s pushed", deviceName))
 			}
 			if debug {
-				fmt.Sprintf("button on device %s pushed\n", deviceName)
+				fmt.Printf("button on device %s pushed\n", deviceName)
 			}
 			var p publishType
 			p.topic = fmt.Sprintf("devices/%s/button/button/set", deviceName)
@@ -633,6 +633,9 @@ func stateMachine(client mqtt.Client) {
 						region["control"] = "manual-o"
 					}
 				}
+				if verboseLog {
+					logMessage(fmt.Sprintf("region %s control set to %s by button", regionName, region["control"]))
+				}
 				regionMap[regionName] = region
 
 				if debug {
@@ -670,6 +673,9 @@ func stateMachine(client mqtt.Client) {
 					region["control"] = "manual-o"
 				}
 			}
+			if verboseLog {
+				logMessage(fmt.Sprintf("region %s control set to %s", regionName, region["control"]))
+			}
 
 			var p publishType
 			p.topic = fmt.Sprintf("lighting/%s/control", regionName)
@@ -688,11 +694,17 @@ func stateMachine(client mqtt.Client) {
 		if inWindow && region["control"] == "manual-o" {
 			region["control"] = "auto"
 			regionMap[regionName] = region
+			if verboseLog {
+				logMessage(fmt.Sprintf("region %s control set to auto by window change", regionName))
+			}
 		}
 
 		if !inWindow && region["control"] == "manual-i" {
 			region["control"] = "auto"
 			regionMap[regionName] = region
+			if verboseLog {
+				logMessage(fmt.Sprintf("region %s control set to auto by window change", regionName))
+			}
 		}
 
 		// Calculate whether the lights in this region should be on.
