@@ -313,6 +313,13 @@ func dropRegion(regionName string) {
 	logMessage("Region " + regionName + " dropped")
 }
 
+func publishControl(name string, control string) {
+	var p publishType
+	p.topic = fmt.Sprintf("lighting/%s/control", name)
+	p.payload = control
+	publishChan <- p
+}
+
 /*
  * All action requests come here and are serialized that way
  */
@@ -338,6 +345,9 @@ func updater() {
 				if !ok {
 					region = make(map[string]string)
 					region["control"] = "auto"
+					if update.value1 != "control" {
+						publishControl(update.region, "auto")
+					}
 				}
 				region[update.value1] = update.value2
 				regionMap[update.region] = region
@@ -641,10 +651,7 @@ func stateMachine(client mqtt.Client) {
 				if debug {
 					fmt.Printf("\t\t%s[\"control\"] set to %s\n", regionName, region["control"])
 				}
-				var p publishType
-				p.topic = fmt.Sprintf("lighting/%s/control", regionName)
-				p.payload = region["control"]
-				publishChan <- p
+				publishControl(regionName, region["control"])
 			}
 		}
 
@@ -673,18 +680,15 @@ func stateMachine(client mqtt.Client) {
 					region["control"] = "manual-o"
 				}
 			}
+			delete(region, "command")
+
 			if verboseLog {
 				logMessage(fmt.Sprintf("region %s control set to %s", regionName, region["control"]))
 			}
 
+			publishControl(regionName, region["control"])
+
 			var p publishType
-			p.topic = fmt.Sprintf("lighting/%s/control", regionName)
-			p.payload = region["control"]
-			publishChan <- p
-
-			delete(region, "command")
-			regionMap[regionName] = region
-
 			p.topic = fmt.Sprintf("lighting/%s/command", regionName)
 			p.payload = ""
 			publishChan <- p
@@ -693,7 +697,7 @@ func stateMachine(client mqtt.Client) {
 		// If manual control has expired, return to automatic control
 		if inWindow && region["control"] == "manual-o" {
 			region["control"] = "auto"
-			regionMap[regionName] = region
+			publishControl(regionName, "auto")
 			if verboseLog {
 				logMessage(fmt.Sprintf("region %s control set to auto by window change", regionName))
 			}
@@ -701,7 +705,7 @@ func stateMachine(client mqtt.Client) {
 
 		if !inWindow && region["control"] == "manual-i" {
 			region["control"] = "auto"
-			regionMap[regionName] = region
+			publishControl(regionName, "auto")
 			if verboseLog {
 				logMessage(fmt.Sprintf("region %s control set to auto by window change", regionName))
 			}

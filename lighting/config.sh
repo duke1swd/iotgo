@@ -15,6 +15,6 @@ lighting/outdoor/season/end 1/6
 lighting/outdoor/window-start light
 lighting/outdoor/window-end 23:00
 lighting/outdoor/devices plug-0002
-lighting/carolinaroom/window-end 23:55
+lighting/carolinaroom/window-end 22:00
 lighting/carolinaroom/devices tp-plug-01,tp-plug-02
 EOF
