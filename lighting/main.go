@@ -601,7 +601,11 @@ func stateMachine(client mqtt.Client) {
 			fmt.Println("\tRegion: ", regionName)
 		}
 
-		startString := region["window-start"]
+		startString, ok := region["window-start"]
+		if !ok {
+			startString = "light"
+		}
+
 		start := hhmmWindow(now, startString, 15)
 		end := hhmmWindow(now, region["window-end"], 23)
 
