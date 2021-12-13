@@ -260,6 +260,10 @@ func updateDevices(region, devices string) {
 	// for every device mentioned, move to this region
 	// and mark it active
 	for _, deviceName := range strings.Split(devices, ",") {
+		if !validDevice(deviceName) {
+			continue
+		}
+
 		// Get the device, if any, and initialize it to a good state
 		device, ok := deviceMap[deviceName]
 		if !ok {
