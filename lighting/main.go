@@ -261,6 +261,7 @@ func updateDevices(region, devices string) {
 	// and mark it active
 	for _, deviceName := range strings.Split(devices, ",") {
 		if !validDevice(deviceName) {
+			logMessage(fmt.Sprintf("Invalid device name \"%s\" rejected", deviceName))
 			continue
 		}
 
