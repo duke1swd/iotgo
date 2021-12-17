@@ -18,7 +18,7 @@ import (
 )
 
 const defaultLogDirectory = "/var/log"
-const defaultLogFileName = "HomeLighting"
+const defaultLogFileName = "HomeLighting.log"
 const defaultMqttBroker = "tcp://localhost:1883"
 const defaultStateMachineTicker = 10 // number of seconds between pokes of the state machine.
 const defaultSeasonStartMonth = 11
