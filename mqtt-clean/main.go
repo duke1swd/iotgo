@@ -114,7 +114,7 @@ var f1 mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 	payload := string(msg.Payload())
 
 	// Ignore broadcast messages
-	if strings.Contains(topic, "$broadcast") {
+	if !flagpPresent && strings.Contains(topic, "$broadcast") {
 		return
 	}
 
@@ -180,12 +180,34 @@ func getDevices() {
 
 // List all devices
 func deviceInfo() {
-	for dev, properties := range deviceMap {
+	keys := make([]string, len(deviceMap))
+
+	i := 0
+	maxLen := 0
+	for s := range deviceMap {
+		keys[i] = s
+		i++
+		if len(s) > maxLen {
+			maxLen = len(s)
+		}
+	}
+	// now, sort the keys
+	sort.Strings(keys)
+
+	// print things out in alpha order
+	for _, dev := range keys {
+		properties := deviceMap[dev]
+
 		state, ok := properties["$state"]
 		if !ok {
 			state = "<unknown>"
 		}
 		if flagL {
+			i = maxLen - len(dev)
+			for  i > 0 {
+				fmt.Printf(" ")
+				i--
+			}
 			fmt.Printf("%s: state=%s\n", dev, state)
 		} else if state == "lost" || state == "disconnected" {
 			fmt.Println(dev)

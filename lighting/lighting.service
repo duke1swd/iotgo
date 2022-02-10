@@ -4,6 +4,7 @@ After=network-online.target
 
 [Service]
 Environment=MQTTBROKER=tcp://DanielPi3:1883
+Environment=VERBOSE_LOG=1
 Type=simple
 Restart=always
 ExecStart=/usr/local/bin/lighting

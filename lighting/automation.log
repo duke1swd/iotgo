@@ -1,0 +1,6 @@
+/var/log/HomeAutomation.log {
+	rotate 7
+	nocompress
+	size 100k
+	nocreate
+}

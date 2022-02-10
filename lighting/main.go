@@ -18,7 +18,7 @@ import (
 )
 
 const defaultLogDirectory = "/var/log"
-const defaultLogFileName = "HomeLighting"
+const defaultLogFileName = "HomeLighting.log"
 const defaultMqttBroker = "tcp://localhost:1883"
 const defaultStateMachineTicker = 10 // number of seconds between pokes of the state machine.
 const defaultSeasonStartMonth = 11
@@ -45,6 +45,22 @@ type publishType struct {
 	payload string
 }
 
+/*
+ * Things that can go in a region map
+
+ key		value
+ ---		-----
+ control	auto/manual-i/manual-o
+ state		on/off
+ command	on/off
+ season/start	mm:dd or "light" or nothing
+ season/end	mm:dd
+ window-start
+ window-end
+
+
+*/
+
 var (
 	client            mqtt.Client
 	logDirectory      string
@@ -57,7 +73,7 @@ var (
 	seasonEnd         time.Duration
 	globalEnable      bool
 	verboseLog        bool
-	regionMap         map[string]map[string]string // map region to a set of devices
+	regionMap         map[string]map[string]string // map region name to a region.  A region is a set of string-key/string-value pairs.
 	deviceMap         map[string]deviceType        // map a device name to its region
 	lightLevel        int
 	debug             bool
@@ -244,6 +260,11 @@ func updateDevices(region, devices string) {
 	// for every device mentioned, move to this region
 	// and mark it active
 	for _, deviceName := range strings.Split(devices, ",") {
+		if !validDevice(deviceName) {
+			logMessage(fmt.Sprintf("Invalid device name \"%s\" rejected", deviceName))
+			continue
+		}
+
 		// Get the device, if any, and initialize it to a good state
 		device, ok := deviceMap[deviceName]
 		if !ok {
@@ -297,6 +318,13 @@ func dropRegion(regionName string) {
 	logMessage("Region " + regionName + " dropped")
 }
 
+func publishControl(name string, control string) {
+	var p publishType
+	p.topic = fmt.Sprintf("lighting/%s/control", name)
+	p.payload = control
+	publishChan <- p
+}
+
 /*
  * All action requests come here and are serialized that way
  */
@@ -322,6 +350,9 @@ func updater() {
 				if !ok {
 					region = make(map[string]string)
 					region["control"] = "auto"
+					if update.value1 != "control" {
+						publishControl(update.region, "auto")
+					}
 				}
 				region[update.value1] = update.value2
 				regionMap[update.region] = region
@@ -346,8 +377,32 @@ func updater() {
 			case "outlet":
 				device, ok := deviceMap[update.value1]
 				if ok {
-					device.outlet = update.value2
-					deviceMap[update.value1] = device
+					// Try to figure out if the outlet state was changed by an external entity.
+					// If so, count this as a button press.
+					// Any change of the outlet to a state different than the region state is presumed external.
+
+					// first check if the state has changed
+					if debug {
+						fmt.Printf("\t\tGot Outlet Update %s %s\n", update.value1, update.value2)
+					}
+					if device.outlet != update.value2 {
+						device.outlet = update.value2
+						if debug {
+							fmt.Printf("\t\t\tChanged\n")
+						}
+
+						// did we just change to a state that is not the region state?
+						region, ok := regionMap[device.region]
+						if ok && ((device.outlet == "true" && region["state"] == "off") ||
+							(device.outlet == "false" && region["state"] == "on")) {
+							device.button = "true"
+							if debug {
+								fmt.Printf("\t\tXXX Set device %s outlet set to %s trigger inferred button\n",
+									update.value1, device.outlet)
+							}
+						}
+						deviceMap[update.value1] = device
+					}
 				}
 			case "button":
 				device, ok := deviceMap[update.value1]
@@ -434,6 +489,8 @@ func setRegionState(regionName string, newState bool) {
 			p.topic = fmt.Sprintf("devices/%s/outlet/on/set", deviceName)
 			if device.outlet == "true" && !newState {
 				p.payload = "false"
+				device.outlet = p.payload
+				deviceMap[deviceName] = device
 				publishChan <- p
 				if verboseLog {
 					logMessage(fmt.Sprintf("device %s in region %s set to off", deviceName, regionName))
@@ -441,6 +498,8 @@ func setRegionState(regionName string, newState bool) {
 			}
 			if device.outlet == "false" && newState {
 				p.payload = "true"
+				device.outlet = p.payload
+				deviceMap[deviceName] = device
 				publishChan <- p
 				if verboseLog {
 					logMessage(fmt.Sprintf("device %s in region %s set to on", deviceName, regionName))
@@ -478,6 +537,9 @@ func stateMachine(client mqtt.Client) {
 		if device.button == "true" {
 			if verboseLog {
 				logMessage(fmt.Sprintf("button on device %s pushed", deviceName))
+			}
+			if debug {
+				fmt.Printf("button on device %s pushed\n", deviceName)
 			}
 			var p publishType
 			p.topic = fmt.Sprintf("devices/%s/button/button/set", deviceName)
@@ -544,7 +606,11 @@ func stateMachine(client mqtt.Client) {
 			fmt.Println("\tRegion: ", regionName)
 		}
 
-		startString := region["window-start"]
+		startString, ok := region["window-start"]
+		if !ok {
+			startString = "light"
+		}
+
 		start := hhmmWindow(now, startString, 15)
 		end := hhmmWindow(now, region["window-end"], 23)
 
@@ -569,6 +635,9 @@ func stateMachine(client mqtt.Client) {
 		// handle button pushes and automatic vs manual states
 		for deviceName, device := range deviceMap {
 			if device.region == regionName && device.button == "true" {
+				if debug {
+					fmt.Printf("\t\tXXX processing button press.  Region control is %s\n", region["control"])
+				}
 				device.button = "false"
 				deviceMap[deviceName] = device
 				switch region["control"] {
@@ -583,15 +652,15 @@ func stateMachine(client mqtt.Client) {
 						region["control"] = "manual-o"
 					}
 				}
+				if verboseLog {
+					logMessage(fmt.Sprintf("region %s control set to %s by button", regionName, region["control"]))
+				}
 				regionMap[regionName] = region
 
 				if debug {
 					fmt.Printf("\t\t%s[\"control\"] set to %s\n", regionName, region["control"])
 				}
-				var p publishType
-				p.topic = fmt.Sprintf("lighting/%s/control", regionName)
-				p.payload = region["control"]
-				publishChan <- p
+				publishControl(regionName, region["control"])
 			}
 		}
 
@@ -620,15 +689,15 @@ func stateMachine(client mqtt.Client) {
 					region["control"] = "manual-o"
 				}
 			}
+			delete(region, "command")
+
+			if verboseLog {
+				logMessage(fmt.Sprintf("region %s control set to %s", regionName, region["control"]))
+			}
+
+			publishControl(regionName, region["control"])
 
 			var p publishType
-			p.topic = fmt.Sprintf("lighting/%s/control", regionName)
-			p.payload = region["control"]
-			publishChan <- p
-
-			delete(region, "command")
-			regionMap[regionName] = region
-
 			p.topic = fmt.Sprintf("lighting/%s/command", regionName)
 			p.payload = ""
 			publishChan <- p
@@ -637,12 +706,18 @@ func stateMachine(client mqtt.Client) {
 		// If manual control has expired, return to automatic control
 		if inWindow && region["control"] == "manual-o" {
 			region["control"] = "auto"
-			regionMap[regionName] = region
+			publishControl(regionName, "auto")
+			if verboseLog {
+				logMessage(fmt.Sprintf("region %s control set to auto by window change", regionName))
+			}
 		}
 
 		if !inWindow && region["control"] == "manual-i" {
 			region["control"] = "auto"
-			regionMap[regionName] = region
+			publishControl(regionName, "auto")
+			if verboseLog {
+				logMessage(fmt.Sprintf("region %s control set to auto by window change", regionName))
+			}
 		}
 
 		// Calculate whether the lights in this region should be on.
