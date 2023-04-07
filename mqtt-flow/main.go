@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
-	"strings"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/eclipse/paho.mqtt.golang"
 )
@@ -34,7 +34,7 @@ var f mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 		if err == nil {
 			etime := epoch.Add(time.Duration(t) * time.Second)
 			// if the payload appears to be a time, convert it to a sensible looking time
-			payload += " (" +  etime.Format("Mon Jan 2 15:04:05 -0700 EST 2006") + ")"
+			payload += " (" + etime.Format("Mon Jan 2 15:04:05 -0700 EST 2006") + ")"
 		}
 	}
 	fmt.Printf("%s: %s\n", topic, payload)
